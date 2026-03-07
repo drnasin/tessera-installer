@@ -79,25 +79,27 @@ if ($command === 'new') {
     $directory = $args[1] ?? null;
 
     if (! $directory) {
-        Console::error('Nedostaje ime direktorija.');
-        Console::line('Koristi: tessera new {ime-projekta}');
+        Console::error('Missing directory name.');
+        Console::line('Usage: tessera new {project-name}');
         exit(1);
     }
 
     // Validate directory name
     if (! preg_match('/^[a-zA-Z0-9._-]+$/', $directory)) {
-        Console::error('Neispravan naziv direktorija. Koristi samo slova, brojeve, -, _, .');
+        Console::error('Invalid directory name. Use only letters, numbers, -, _, .');
         exit(1);
     }
 
-    $cmd = new NewCommand($directory);
+    $force = in_array('--force', $args, true) || in_array('-f', $args, true);
+
+    $cmd = new NewCommand($directory, $force);
     exit($cmd->run());
 }
 
 // ─── Unknown command ───
 
-Console::error("Nepoznata komanda: {$command}");
-Console::line('Koristi: tessera --help');
+Console::error("Unknown command: {$command}");
+Console::line('Use: tessera --help');
 exit(1);
 
 // ─── Functions ───
@@ -107,32 +109,33 @@ function showHelp(): void
     Console::line();
     Console::cyan('  TESSERA — AI-Native CMS Installer');
     Console::line();
-    Console::line('  Koristi:');
-    Console::line('    tessera new {ime-projekta}    Kreiraj novi Tessera projekt');
-    Console::line('    tessera tools                 Prikazi dostupne AI alate');
-    Console::line('    tessera --version             Verzija');
-    Console::line('    tessera --help                Ova poruka');
+    Console::line('  Usage:');
+    Console::line('    tessera new {project-name}           Create a new Tessera project');
+    Console::line('    tessera new {project-name} --force   Overwrite existing directory');
+    Console::line('    tessera tools                        Show available AI tools');
+    Console::line('    tessera --version                    Version');
+    Console::line('    tessera --help                       This message');
     Console::line();
-    Console::line('  Primjer:');
-    Console::cyan('    tessera new moj-restoran');
+    Console::line('  Example:');
+    Console::cyan('    tessera new my-restaurant');
     Console::line();
-    Console::line('  AI ce te pitati sto trebas i sam izgraditi projekt.');
-    Console::line('  Trebas PHP 8.2+ i barem jedan AI CLI (claude, gemini, codex).');
+    Console::line('  AI will ask what you need and build the project.');
+    Console::line('  Requires PHP 8.2+ and at least one AI CLI (claude, gemini, codex).');
     Console::line();
 }
 
 function showTools(): void
 {
     Console::line();
-    Console::bold('Dostupni AI alati:');
+    Console::bold('Available AI tools:');
     Console::line();
 
     $tools = AiTool::detectAll();
 
     if (empty($tools)) {
-        Console::error('Nijedan AI alat nije pronaden!');
+        Console::error('No AI tools found!');
         Console::line();
-        Console::line('Instaliraj barem jedan:');
+        Console::line('Install at least one:');
         Console::line('  claude — https://docs.anthropic.com/en/docs/claude-code');
         Console::line('  gemini — https://ai.google.dev/gemini-api/docs/cli');
         Console::line('  codex  — https://github.com/openai/codex');

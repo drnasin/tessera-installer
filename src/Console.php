@@ -103,7 +103,7 @@ final class Console
             echo "  {$marker}[{$i}] {$option}" . PHP_EOL;
         }
 
-        $answer = self::ask('Izbor', (string) $default);
+        $answer = self::ask('Choice', (string) $default);
 
         $index = (int) $answer;
 
@@ -128,7 +128,7 @@ final class Console
         $process = proc_open($command, $descriptors, $pipes, $workingDir);
 
         if (! is_resource($process)) {
-            self::error("Ne mogu pokrenuti: {$command}");
+            self::error("Could not start: {$command}");
 
             return 1;
         }
@@ -150,10 +150,12 @@ final class Console
             chdir($workingDir);
         }
 
-        exec($command . ' 2>&1', $output, $exitCode);
-
-        if ($workingDir && $currentDir) {
-            chdir($currentDir);
+        try {
+            exec($command . ' 2>&1', $output, $exitCode);
+        } finally {
+            if ($workingDir && $currentDir) {
+                chdir($currentDir);
+            }
         }
 
         return ['output' => implode(PHP_EOL, $output), 'exit' => $exitCode];

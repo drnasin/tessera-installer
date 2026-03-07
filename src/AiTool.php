@@ -103,7 +103,7 @@ final class AiTool
         }
 
         $descriptors = [
-            0 => $this->config['stdin'] ? ['pipe', 'r'] : ['pipe', 'r'],
+            0 => ['pipe', 'r'],
             1 => ['pipe', 'w'],
             2 => ['pipe', 'w'],
         ];
@@ -116,24 +116,49 @@ final class AiTool
             return new AiResponse(false, '', 'Failed to start AI process', 1);
         }
 
-        // Write prompt to stdin if tool supports it
-        if ($this->config['stdin']) {
-            fwrite($pipes[0], $prompt);
-        }
-        fclose($pipes[0]);
+        try {
+            // Write prompt to stdin if tool supports it
+            if ($this->config['stdin']) {
+                fwrite($pipes[0], $prompt);
+            }
+            fclose($pipes[0]);
 
-        // Set non-blocking for timeout handling
-        stream_set_blocking($pipes[1], false);
-        stream_set_blocking($pipes[2], false);
+            // Set non-blocking for timeout handling
+            stream_set_blocking($pipes[1], false);
+            stream_set_blocking($pipes[2], false);
 
-        $output = '';
-        $error = '';
-        $startTime = time();
+            $output = '';
+            $error = '';
+            $startTime = time();
 
-        while (true) {
-            $status = proc_get_status($process);
+            while (true) {
+                $status = proc_get_status($process);
 
-            // Read available output
+                // Read available output
+                $chunk = stream_get_contents($pipes[1]);
+                if ($chunk !== false) {
+                    $output .= $chunk;
+                }
+
+                $errChunk = stream_get_contents($pipes[2]);
+                if ($errChunk !== false) {
+                    $error .= $errChunk;
+                }
+
+                if (! $status['running']) {
+                    break;
+                }
+
+                if ((time() - $startTime) > $timeout) {
+                    proc_terminate($process);
+
+                    return new AiResponse(false, $output, 'Timeout after ' . $timeout . 's', 124);
+                }
+
+                usleep(100_000); // 100ms
+            }
+
+            // Final read
             $chunk = stream_get_contents($pipes[1]);
             if ($chunk !== false) {
                 $output .= $chunk;
@@ -143,36 +168,15 @@ final class AiTool
             if ($errChunk !== false) {
                 $error .= $errChunk;
             }
-
-            if (! $status['running']) {
-                break;
-            }
-
-            if ((time() - $startTime) > $timeout) {
-                proc_terminate($process);
+        } finally {
+            // Always close pipes and process
+            if (is_resource($pipes[1])) {
                 fclose($pipes[1]);
-                fclose($pipes[2]);
-                proc_close($process);
-
-                return new AiResponse(false, $output, 'Timeout after ' . $timeout . 's', 124);
             }
-
-            usleep(100_000); // 100ms
+            if (is_resource($pipes[2])) {
+                fclose($pipes[2]);
+            }
         }
-
-        // Final read
-        $chunk = stream_get_contents($pipes[1]);
-        if ($chunk !== false) {
-            $output .= $chunk;
-        }
-
-        $errChunk = stream_get_contents($pipes[2]);
-        if ($errChunk !== false) {
-            $error .= $errChunk;
-        }
-
-        fclose($pipes[1]);
-        fclose($pipes[2]);
 
         $exitCode = proc_close($process);
 

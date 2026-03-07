@@ -59,30 +59,34 @@ final class NodeStack implements StackInterface
         $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
         $desc = $requirements['description'] ?? 'Node.js projekt';
 
-        Console::spinner('AI generira Node.js projekt...');
+        Console::spinner('AI is generating Node.js project...');
+
+        if (! @mkdir($fullPath, 0755, true) && ! is_dir($fullPath)) {
+            Console::error("Could not create directory: {$fullPath}");
+
+            return false;
+        }
 
         $prompt = <<<PROMPT
-Kreiraj kompletni Node.js projekt u trenutnom direktoriju.
+Create a complete Node.js project in the current directory.
 
-OPIS: {$desc}
+DESCRIPTION: {$desc}
 
-Koristi: TypeScript, Next.js (ili Express ako je API-only), Prisma ORM, PostgreSQL.
-Kreiraj: package.json, tsconfig.json, osnovnu strukturu, README.md s uputama.
-Postavi ESLint + Prettier. Dodaj Docker compose za dev environment.
+Use: TypeScript, Next.js (or Express if API-only), Prisma ORM, PostgreSQL.
+Create: package.json, tsconfig.json, basic structure, README.md with instructions.
+Set up ESLint + Prettier. Add Docker compose for dev environment.
 PROMPT;
-
-        mkdir($fullPath, 0755, true);
 
         $response = $ai->execute($prompt, $fullPath, 600);
 
         if (! $response->success) {
-            Console::error('AI scaffold nije uspio: ' . $response->error);
+            Console::error('AI scaffold failed: ' . $response->error);
 
             return false;
         }
 
         Console::line($response->output);
-        Console::success('Node.js projekt generiran');
+        Console::success('Node.js project generated');
 
         return true;
     }
@@ -91,7 +95,7 @@ PROMPT;
     {
         $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
 
-        Console::spinner('Instaliram npm pakete...');
+        Console::spinner('Installing npm packages...');
         Console::exec('npm install', $fullPath);
 
         return true;

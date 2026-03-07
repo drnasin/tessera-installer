@@ -53,22 +53,22 @@ final class LaravelStack implements StackInterface
         $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
 
         // Create Laravel project
-        Console::spinner('Kreiram Laravel projekt...');
+        Console::spinner('Creating Laravel project...');
 
         $exit = Console::exec(
             "composer create-project laravel/laravel {$directory} --prefer-dist --no-interaction",
         );
 
         if ($exit !== 0) {
-            Console::error('composer create-project nije uspio.');
+            Console::error('composer create-project failed.');
 
             return false;
         }
 
-        Console::success('Laravel projekt kreiran');
+        Console::success('Laravel project created');
 
         // Install Tessera core packages
-        Console::spinner('Instaliram Tessera pakete...');
+        Console::spinner('Installing Tessera packages...');
 
         $packages = [
             'filament/filament',
@@ -100,38 +100,38 @@ final class LaravelStack implements StackInterface
         );
 
         if ($exit !== 0) {
-            Console::warn('Neki paketi se mozda nisu instalirali. Nastavljam...');
+            Console::warn('Some packages may not have installed. Continuing...');
         }
 
-        Console::success('Core paketi instalirani');
+        Console::success('Core packages installed');
 
         // Dev packages
-        Console::spinner('Instaliram dev alate...');
+        Console::spinner('Installing dev tools...');
 
         Console::exec(
             'composer require --dev laravel/boost laravel/pint laravel/telescope larastan/larastan --no-interaction',
             $fullPath,
         );
 
-        Console::success('Dev alati instalirani');
+        Console::success('Dev tools installed');
 
         // Let AI scaffold everything
-        Console::spinner('AI konfigurira i gradi projekt...');
+        Console::spinner('AI is configuring and building project...');
 
         $prompt = $this->buildScaffoldPrompt($requirements);
 
         $response = $ai->execute($prompt, $fullPath, 600);
 
         if (! $response->success) {
-            Console::error('AI scaffold nije uspio: ' . $response->error);
-            Console::line('Projekt je kreiran u: ' . $fullPath);
+            Console::error('AI scaffold failed: ' . $response->error);
+            Console::line('Project created at: ' . $fullPath);
 
             return false;
         }
 
         Console::line();
         Console::line($response->output);
-        Console::success('AI scaffold zavrsen');
+        Console::success('AI scaffold complete');
 
         return true;
     }
@@ -140,10 +140,10 @@ final class LaravelStack implements StackInterface
     {
         $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
 
-        Console::spinner('Pokrecem migracije...');
+        Console::spinner('Running migrations...');
         Console::exec('php artisan migrate --force', $fullPath);
 
-        Console::spinner('Buildamo assets...');
+        Console::spinner('Building assets...');
         $npm = Console::execSilent('npm --version');
 
         if ($npm['exit'] === 0) {

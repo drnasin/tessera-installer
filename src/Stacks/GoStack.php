@@ -49,31 +49,35 @@ final class GoStack implements StackInterface
         $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
         $desc = $requirements['description'] ?? 'Go backend';
 
-        Console::spinner('AI generira Go projekt...');
+        Console::spinner('AI is generating Go project...');
+
+        if (! @mkdir($fullPath, 0755, true) && ! is_dir($fullPath)) {
+            Console::error("Could not create directory: {$fullPath}");
+
+            return false;
+        }
 
         $prompt = <<<PROMPT
-Kreiraj kompletni Go projekt u trenutnom direktoriju.
+Create a complete Go project in the current directory.
 
-OPIS: {$desc}
+DESCRIPTION: {$desc}
 
-Koristi: Go modules, Chi router, sqlc ili GORM, PostgreSQL.
-Struktura: cmd/, internal/, pkg/, migrations/, docker-compose.yml.
-Kreiraj: go.mod, main.go, Makefile, Dockerfile, README.md.
-Dodaj health check endpoint i graceful shutdown.
+Use: Go modules, Chi router, sqlc or GORM, PostgreSQL.
+Structure: cmd/, internal/, pkg/, migrations/, docker-compose.yml.
+Create: go.mod, main.go, Makefile, Dockerfile, README.md.
+Add health check endpoint and graceful shutdown.
 PROMPT;
-
-        mkdir($fullPath, 0755, true);
 
         $response = $ai->execute($prompt, $fullPath, 600);
 
         if (! $response->success) {
-            Console::error('AI scaffold nije uspio: ' . $response->error);
+            Console::error('AI scaffold failed: ' . $response->error);
 
             return false;
         }
 
         Console::line($response->output);
-        Console::success('Go projekt generiran');
+        Console::success('Go project generated');
 
         return true;
     }
@@ -82,7 +86,7 @@ PROMPT;
     {
         $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
 
-        Console::spinner('Go mod tidy...');
+        Console::spinner('Running go mod tidy...');
         Console::exec('go mod tidy', $fullPath);
 
         return true;

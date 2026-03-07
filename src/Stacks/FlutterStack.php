@@ -54,41 +54,41 @@ final class FlutterStack implements StackInterface
         $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
         $desc = $requirements['description'] ?? 'Flutter app';
 
-        Console::spinner('Kreiram Flutter projekt...');
+        Console::spinner('Creating Flutter project...');
 
         $exit = Console::exec("flutter create {$directory} --org com.tessera --no-pub");
 
         if ($exit !== 0) {
-            Console::error('flutter create nije uspio.');
+            Console::error('flutter create failed.');
 
             return false;
         }
 
-        Console::spinner('AI konfigurira Flutter projekt...');
+        Console::spinner('AI is configuring Flutter project...');
 
         $prompt = <<<PROMPT
-Flutter projekt je upravo kreiran. Konfiguriraj ga za produkciju.
+A Flutter project was just created. Configure it for production.
 
-OPIS: {$desc}
+DESCRIPTION: {$desc}
 
-Napravi:
-1. Dodaj u pubspec.yaml: riverpod, dio, go_router, freezed, json_annotation
-2. Kreiraj strukturu: lib/features/, lib/core/, lib/shared/
-3. Postavi routing (go_router), state management (Riverpod), API layer (Dio)
-4. Kreiraj osnovne ekrane prema opisu
-5. Dodaj theme s Material 3
-6. README.md s uputama
+Do:
+1. Add to pubspec.yaml: riverpod, dio, go_router, freezed, json_annotation
+2. Create structure: lib/features/, lib/core/, lib/shared/
+3. Set up routing (go_router), state management (Riverpod), API layer (Dio)
+4. Create basic screens based on description
+5. Add Material 3 theme
+6. README.md with instructions
 PROMPT;
 
         $response = $ai->execute($prompt, $fullPath, 600);
 
         if (! $response->success) {
-            Console::warn('AI konfiguracija djelomicno uspjela. Nastavljam...');
+            Console::warn('AI configuration partially succeeded. Continuing...');
         } else {
             Console::line($response->output);
         }
 
-        Console::success('Flutter projekt generiran');
+        Console::success('Flutter project generated');
 
         return true;
     }
