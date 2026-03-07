@@ -1,0 +1,18 @@
+{
+    "name": "tessera/installer",
+    "description": "Tessera AI-Native CMS Installer — AI builds your project",
+    "keywords": ["tessera", "cms", "ai", "installer", "laravel"],
+    "license": "MIT",
+    "type": "project",
+    "require": {
+        "php": "^8.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tessera\\Installer\\": "src/"
+        }
+    },
+    "bin": ["bin/tessera"],
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

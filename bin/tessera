@@ -1,0 +1,148 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Tessera CLI — AI-Native CMS Installer
+ *
+ * Usage:
+ *   tessera new {directory}    Create a new Tessera project
+ *   tessera tools              Show available AI tools
+ *   tessera --version          Show version
+ *   tessera --help             Show help
+ *
+ * Install globally:
+ *   composer global require tessera/installer
+ */
+
+// Autoloader: support both global install and local dev
+$autoloaders = [
+    __DIR__ . '/../vendor/autoload.php',           // local dev
+    __DIR__ . '/../../autoload.php',                // global install (vendor/bin)
+    __DIR__ . '/../../../autoload.php',             // global install (deeper)
+];
+
+$loaded = false;
+
+foreach ($autoloaders as $autoloader) {
+    if (file_exists($autoloader)) {
+        require $autoloader;
+        $loaded = true;
+
+        break;
+    }
+}
+
+if (! $loaded) {
+    // Fallback: manual require for standalone usage without composer autoload
+    $src = dirname(__DIR__) . '/src';
+    require $src . '/AiResponse.php';
+    require $src . '/AiTool.php';
+    require $src . '/Console.php';
+    require $src . '/NewCommand.php';
+}
+
+use Tessera\Installer\AiTool;
+use Tessera\Installer\Console;
+use Tessera\Installer\NewCommand;
+
+// ─── Parse arguments ───
+
+$args = array_slice($argv, 1);
+$command = $args[0] ?? null;
+
+// ─── Version ───
+
+if ($command === '--version' || $command === '-v') {
+    Console::line('Tessera Installer v1.0.0');
+    exit(0);
+}
+
+// ─── Help ───
+
+if ($command === '--help' || $command === '-h' || $command === null) {
+    showHelp();
+    exit(0);
+}
+
+// ─── Tools ───
+
+if ($command === 'tools') {
+    showTools();
+    exit(0);
+}
+
+// ─── New project ───
+
+if ($command === 'new') {
+    $directory = $args[1] ?? null;
+
+    if (! $directory) {
+        Console::error('Nedostaje ime direktorija.');
+        Console::line('Koristi: tessera new {ime-projekta}');
+        exit(1);
+    }
+
+    // Validate directory name
+    if (! preg_match('/^[a-zA-Z0-9._-]+$/', $directory)) {
+        Console::error('Neispravan naziv direktorija. Koristi samo slova, brojeve, -, _, .');
+        exit(1);
+    }
+
+    $cmd = new NewCommand($directory);
+    exit($cmd->run());
+}
+
+// ─── Unknown command ───
+
+Console::error("Nepoznata komanda: {$command}");
+Console::line('Koristi: tessera --help');
+exit(1);
+
+// ─── Functions ───
+
+function showHelp(): void
+{
+    Console::line();
+    Console::cyan('  TESSERA — AI-Native CMS Installer');
+    Console::line();
+    Console::line('  Koristi:');
+    Console::line('    tessera new {ime-projekta}    Kreiraj novi Tessera projekt');
+    Console::line('    tessera tools                 Prikazi dostupne AI alate');
+    Console::line('    tessera --version             Verzija');
+    Console::line('    tessera --help                Ova poruka');
+    Console::line();
+    Console::line('  Primjer:');
+    Console::cyan('    tessera new moj-restoran');
+    Console::line();
+    Console::line('  AI ce te pitati sto trebas i sam izgraditi projekt.');
+    Console::line('  Trebas PHP 8.2+ i barem jedan AI CLI (claude, gemini, codex).');
+    Console::line();
+}
+
+function showTools(): void
+{
+    Console::line();
+    Console::bold('Dostupni AI alati:');
+    Console::line();
+
+    $tools = AiTool::detectAll();
+
+    if (empty($tools)) {
+        Console::error('Nijedan AI alat nije pronaden!');
+        Console::line();
+        Console::line('Instaliraj barem jedan:');
+        Console::line('  claude — https://docs.anthropic.com/en/docs/claude-code');
+        Console::line('  gemini — https://ai.google.dev/gemini-api/docs/cli');
+        Console::line('  codex  — https://github.com/openai/codex');
+
+        return;
+    }
+
+    foreach ($tools as $name => $info) {
+        Console::success("{$name}: {$info['version']}");
+    }
+
+    Console::line();
+}
