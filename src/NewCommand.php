@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Tessera\Installer;
 
+use Tessera\Installer\Stacks\StackInterface;
+use Tessera\Installer\Stacks\StackRegistry;
+
 /**
  * `tessera new {directory}` — AI-powered project scaffolding.
  *
  * Flow:
- * 1. Detect AI tool
- * 2. Interactive conversation with junior dev
- * 3. AI decides architecture (packages, modules, config)
- * 4. Execute: create-project, install packages, configure, scaffold content
+ * 1. Detect AI tool + available stacks
+ * 2. AI-driven conversation with junior dev
+ * 3. AI decides technology stack + architecture
+ * 4. Stack driver handles everything else
  */
 final class NewCommand
 {
@@ -36,46 +39,59 @@ final class NewCommand
             return 1;
         }
 
-        // Step 2: Gather project requirements from junior
+        // Step 2: AI-driven conversation to understand requirements
         $requirements = $this->gatherRequirements();
 
         if ($requirements === null) {
             return 1;
         }
 
-        // Step 3: Let AI plan the project
-        $plan = $this->planWithAi($requirements);
+        // Step 3: AI decides technology stack
+        $stack = $this->decideStack($requirements);
 
-        if ($plan === null) {
+        if ($stack === null) {
             return 1;
         }
 
-        // Step 4: Confirm plan with junior
+        // Step 4: Confirm with junior
         Console::line();
-        Console::bold('AI Plan:');
-        Console::line($plan);
+        Console::bold("AI preporucuje: {$stack->label()}");
         Console::line();
 
-        if (! Console::confirm('Izgleda li ti plan OK?')) {
-            Console::warn('Prekinuto. Pokreni ponovo kad budes spreman.');
+        if (! Console::confirm('Nastavljamo?')) {
+            Console::warn('Prekinuto.');
 
             return 0;
         }
 
-        // Step 5: Execute — create Laravel project
-        if (! $this->createProject()) {
+        // Step 5: Check stack prerequisites
+        $check = $stack->preflight();
+        if (! $check['ready']) {
+            Console::error('Stack nije spreman. Nedostaje:');
+            foreach ($check['missing'] as $item) {
+                Console::line("  - {$item}");
+            }
+
             return 1;
         }
 
-        // Step 6: Let AI configure and scaffold everything
-        if (! $this->scaffoldWithAi($requirements, $plan)) {
+        // Step 6: Check directory
+        if (is_dir($this->fullPath)) {
+            Console::error("Direktorij '{$this->directory}' vec postoji.");
+
             return 1;
         }
 
-        // Step 7: Final setup
-        $this->finalSetup();
+        // Step 7: Scaffold
+        if (! $stack->scaffold($this->directory, $requirements, $this->ai)) {
+            return 1;
+        }
 
-        $this->showComplete();
+        // Step 8: Post-setup
+        $stack->postSetup($this->directory);
+
+        // Step 9: Done!
+        $this->showComplete($stack);
 
         return 0;
     }
@@ -84,39 +100,14 @@ final class NewCommand
     {
         Console::line();
         Console::cyan('╔══════════════════════════════════════╗');
-        Console::cyan('║        TESSERA — AI CMS Engine       ║');
-        Console::cyan('║    Opisi sto trebas, AI ce graditi   ║');
+        Console::cyan('║        TESSERA — AI Architect         ║');
+        Console::cyan('║    Opisi sto trebas, AI ce odluciti   ║');
         Console::cyan('╚══════════════════════════════════════╝');
         Console::line();
     }
 
     private function preflight(): bool
     {
-        // Check PHP
-        if (version_compare(PHP_VERSION, '8.2.0', '<')) {
-            Console::error('Trebas PHP 8.2+. Imas: ' . PHP_VERSION);
-
-            return false;
-        }
-        Console::success('PHP ' . PHP_VERSION);
-
-        // Check Composer
-        $composer = Console::execSilent('composer --version');
-        if ($composer['exit'] !== 0) {
-            Console::error('Composer nije instaliran. Instaliraj ga: https://getcomposer.org');
-
-            return false;
-        }
-        Console::success('Composer pronaden');
-
-        // Check Node/NPM
-        $node = Console::execSilent('node --version');
-        if ($node['exit'] !== 0) {
-            Console::warn('Node.js nije pronaden — trebat ce za Vite/Tailwind. Nastavljam...');
-        } else {
-            Console::success('Node.js ' . trim($node['output']));
-        }
-
         // Check AI tool
         $this->ai = AiTool::detect();
 
@@ -129,402 +120,299 @@ final class NewCommand
 
             return false;
         }
+
         Console::success("AI: {$this->ai->name()}");
 
-        // Check directory
-        if (is_dir($this->fullPath)) {
-            Console::error("Direktorij '{$this->directory}' vec postoji.");
+        // Show available stacks
+        $available = StackRegistry::available();
+        $all = StackRegistry::all();
+
+        Console::line();
+        Console::bold('Dostupni stackovi:');
+
+        foreach ($all as $name => $stack) {
+            $check = $stack->preflight();
+            if ($check['ready']) {
+                Console::success($stack->label());
+            } else {
+                Console::line("  \033[90m{$stack->label()} — nedostaje: " . implode(', ', $check['missing']) . "\033[0m");
+            }
+        }
+
+        Console::line();
+
+        if (empty($available)) {
+            Console::error('Nijedan stack nije spreman. Instaliraj potrebne alate.');
 
             return false;
         }
-        Console::success("Direktorij: {$this->directory}");
-
-        Console::line();
 
         return true;
     }
 
     /**
-     * Interactive conversation to understand what the junior needs.
+     * AI-driven conversation to understand what the junior needs.
      *
      * @return array<string, mixed>|null
      */
     private function gatherRequirements(): ?array
     {
-        Console::bold('Hajdemo napraviti novi projekt!');
-        Console::line('Odgovori na par pitanja da AI zna sto graditi.');
+        Console::bold('AI ce te pitati par pitanja o projektu.');
+        Console::line('Odgovaraj prirodno — ne moras znati tehnicke detalje.');
+        Console::line('Napisi "gotovo" kad si sve rekao.');
         Console::line();
 
-        // Core question — what is this project?
-        $description = Console::ask('Opisi projekt (npr. "web stranica za restoran u Zadru")');
+        $conversation = [];
+        $stackContext = StackRegistry::buildAiContext();
 
-        if (trim($description) === '') {
-            Console::error('Opis ne moze biti prazan.');
+        // First AI question
+        $initPrompt = <<<PROMPT
+Ti si Tessera AI arhitekt. Pomazes junioru napraviti novi projekt.
+AI alat: {$this->ai->name()}
 
-            return null;
+{$stackContext}
+
+Tvoj posao je KRATKIM pitanjima saznati:
+1. Sto klijent radi i kakav projekt treba
+2. Posebni zahtjevi (jezici, e-commerce, mobilna app, API...)
+3. Koliko korisnika ocekuje (malo, srednje, puno)
+
+Postavi PRVO pitanje — kratko, prijateljski, na hrvatskom. Samo jedno pitanje.
+Ne spominji tehnicke detalje — junior ne mora znati sto je Laravel ili Go.
+PROMPT;
+
+        $response = $this->ai->execute($initPrompt, getcwd(), 60);
+        $aiQuestion = $response->success ? $response->output : 'Opisi mi kakav projekt pravis — sto klijent radi?';
+
+        Console::line($aiQuestion);
+        Console::line();
+
+        // Conversation loop
+        $maxRounds = 5;
+
+        for ($i = 0; $i < $maxRounds; $i++) {
+            $answer = Console::ask('');
+
+            if (trim($answer) === '' && $i === 0) {
+                Console::error('Moram znati barem sto klijent radi.');
+
+                return null;
+            }
+
+            $conversation[] = ['role' => 'junior', 'text' => $answer];
+
+            if (in_array(strtolower(trim($answer)), ['gotovo', 'to je to', 'done', 'nista vise', 'kraj'], true)) {
+                break;
+            }
+
+            $historyText = $this->formatConversation($conversation);
+
+            $followUpPrompt = <<<PROMPT
+Ti si Tessera AI arhitekt. Razgovaras s juniorom o novom projektu.
+
+DOSADAŠNJI RAZGOVOR:
+{$historyText}
+
+Ako imas DOVOLJNO informacija za odabir tehnologije i planiranje, odgovori TOCNO: IMAM_DOVOLJNO
+Ako trebas jos nesto, postavi JEDNO kratko pitanje na hrvatskom.
+Budi efikasan — ne pitaj vise od potrebnog.
+PROMPT;
+
+            $response = $this->ai->execute($followUpPrompt, getcwd(), 60);
+
+            if (! $response->success || str_contains($response->output, 'IMAM_DOVOLJNO')) {
+                break;
+            }
+
+            $conversation[] = ['role' => 'ai', 'text' => $response->output];
+            Console::line();
+            Console::line($response->output);
+            Console::line();
         }
-
-        // Does the client have an HTML template?
-        $hasTemplate = Console::confirm('Imas li HTML template za dizajn?', false);
-        $templatePath = null;
-
-        if ($hasTemplate) {
-            $templatePath = Console::ask('Putanja do HTML direktorija');
-        }
-
-        // Languages
-        $multilingual = Console::confirm('Treba li vise jezika?', false);
-        $languages = ['hr'];
-
-        if ($multilingual) {
-            $langInput = Console::ask('Koji jezici? (odvojeni zarezom, npr. hr,en,de)', 'hr,en');
-            $languages = array_map('trim', explode(',', $langInput));
-        }
-
-        // E-commerce
-        $needsShop = Console::confirm('Treba li web shop (e-commerce)?', false);
-        $shopDetails = null;
-
-        if ($needsShop) {
-            $shopDetails = Console::ask('Kakvi proizvodi? (npr. "odjeca s varijantama velicina/boja")');
-        }
-
-        // Any special features?
-        $special = Console::ask('Posebni zahtjevi? (ili Enter za preskociti)', '');
 
         Console::line();
+
+        // Extract structured requirements
+        $historyText = $this->formatConversation($conversation);
+
+        $extractPrompt = <<<PROMPT
+Iz ovog razgovora izvuci podatke. Odgovori TOCNO u ovom formatu (bez markdown):
+
+DESCRIPTION: [kratki opis projekta]
+LANGUAGES: [jezici odvojeni zarezom, default: hr]
+NEEDS_SHOP: [da/ne]
+SHOP_DETAILS: [detalji ili prazno]
+NEEDS_MOBILE: [da/ne]
+NEEDS_REALTIME: [da/ne]
+EXPECTED_USERS: [malo/srednje/puno]
+SPECIAL: [posebni zahtjevi ili prazno]
+
+RAZGOVOR:
+{$historyText}
+PROMPT;
+
+        $response = $this->ai->execute($extractPrompt, getcwd(), 60);
+
+        if ($response->success) {
+            return $this->parseRequirements($response->output, $conversation);
+        }
+
+        // Fallback
+        $rawDescription = implode('. ', array_map(
+            fn ($entry) => $entry['text'],
+            array_filter($conversation, fn ($e) => $e['role'] === 'junior'),
+        ));
 
         return [
-            'description' => $description,
-            'has_template' => $hasTemplate,
-            'template_path' => $templatePath,
-            'languages' => $languages,
-            'needs_shop' => $needsShop,
-            'shop_details' => $shopDetails,
-            'special' => $special,
+            'description' => $rawDescription,
+            'languages' => ['hr'],
+            'needs_shop' => false,
+            'needs_mobile' => false,
+            'needs_realtime' => false,
+            'expected_users' => 'malo',
+            'conversation' => $conversation,
         ];
     }
 
     /**
-     * Ask AI to plan the project architecture.
+     * AI decides which technology stack to use.
      */
-    private function planWithAi(array $requirements): ?string
+    private function decideStack(array $requirements): ?StackInterface
     {
-        Console::spinner('AI planira projekt...');
+        $stackContext = StackRegistry::buildAiContext();
+        $desc = $requirements['description'] ?? '';
+        $mobile = ($requirements['needs_mobile'] ?? false) ? 'DA' : 'NE';
+        $realtime = ($requirements['needs_realtime'] ?? false) ? 'DA' : 'NE';
+        $users = $requirements['expected_users'] ?? 'malo';
+        $shop = ($requirements['needs_shop'] ?? false) ? 'DA' : 'NE';
+        $special = $requirements['special'] ?? '';
 
-        $prompt = $this->buildPlanPrompt($requirements);
+        Console::spinner('AI bira tehnologiju...');
 
-        $response = $this->ai->execute($prompt, getcwd(), 120);
+        $prompt = <<<PROMPT
+Ti si Tessera AI arhitekt. Na temelju zahtjeva, odaberi JEDNU tehnologiju.
+
+ZAHTJEVI:
+- Opis: {$desc}
+- Mobilna app: {$mobile}
+- Real-time: {$realtime}
+- Ocekivani korisnici: {$users}
+- E-commerce: {$shop}
+- Posebno: {$special}
+
+{$stackContext}
+
+PRAVILA ODLUCIVANJA:
+1. Ako treba MOBILNA APP → flutter
+2. Ako treba HIGH-PERFORMANCE backend s 1000+ istovremenih korisnika → go
+3. Ako treba web stranica, CMS, admin panel, e-commerce → laravel
+4. Ako treba API-first s React/Vue frontendom, SaaS → node
+5. Ako treba JEDNOSTAVNA landing stranica bez backend-a → static
+6. Ako nisi siguran → laravel (najfleksibilniji za pocetnike)
+
+Odgovori TOCNO u ovom formatu (bez markdown, bez objasnjenja):
+STACK: [ime stacka]
+REASON: [jedan red zasto]
+PROMPT;
+
+        $response = $this->ai->execute($prompt, getcwd(), 60);
 
         if (! $response->success) {
-            Console::error('AI nije uspio planirati: ' . $response->error);
+            Console::warn('AI nije mogao odluciti. Koristim Laravel kao default.');
 
-            return null;
+            return StackRegistry::get('laravel');
         }
 
-        return $response->output;
-    }
+        // Parse AI response
+        $stackName = 'laravel';
 
-    private function buildPlanPrompt(array $requirements): string
-    {
-        $desc = $requirements['description'];
-        $langs = implode(', ', $requirements['languages']);
-        $shop = $requirements['needs_shop'] ? "DA — {$requirements['shop_details']}" : 'NE';
-        $template = $requirements['has_template'] ? "DA — {$requirements['template_path']}" : 'NE';
-        $special = $requirements['special'] ?: 'Nema';
-
-        return <<<PROMPT
-Ti si Tessera AI arhitekt. Na temelju opisa projekta, napravi PLAN.
-
-PROJEKT: {$desc}
-JEZICI: {$langs}
-E-COMMERCE: {$shop}
-HTML TEMPLATE: {$template}
-POSEBNO: {$special}
-
-Tessera je AI-native CMS na Laravel 12 + Filament 5.3 + Livewire 4 + Tailwind 4.
-
-DOSTUPNI MODULI (aktiviraj samo sto treba):
-- shop: E-commerce (proizvodi, varijante, kosarcia, checkout, placanje)
-- blog: Blog/novosti
-- menu: Jelovnik/katalog s cijenama (restorani, kafici)
-- booking: Rezervacijski sustav (termini, kapacitet)
-- gallery: Galerije s albumima
-- newsletter: Newsletter subscribe + Mailchimp/Brevo sync
-- contact: Kontakt forme s honeypot zastitom
-
-COMPOSER PAKETI (uz standard Laravel):
-- filament/filament: Admin panel
-- awcodes/filament-curator: Media library
-- spatie/laravel-permission: Role i dozvole
-- spatie/laravel-translatable: Visejezicnost
-- spatie/laravel-sluggable: Auto slugovi
-- spatie/laravel-tags: Tagovi
-- spatie/laravel-medialibrary: Media uploads
-- spatie/laravel-sitemap: SEO sitemap
-- spatie/laravel-honeypot: Spam zastita
-- laravel/scout + meilisearch/meilisearch-php: Search (ako treba shop)
-- barryvdh/laravel-dompdf: PDF generiranje (racuni za shop)
-- maatwebsite/excel: Excel export (narudzbe, kontakti)
-- intervention/image: Image processing
-
-ODGOVORI U OVOM FORMATU (TOCNO ovako, bez markdown code blokova):
-
-NAZIV: [ime projekta]
-TIP: [restoran/shop/portfolio/usluge/blog/landing/custom]
-TEMA: [ime teme]
-BAZA: [mysql/sqlite]
-JEZICI: [lista]
-MODULI: [lista aktivnih modula]
-PAKETI: [samo DODATNI paketi izvan standarda, ili "standard" ako nista extra]
-STRANICE:
-- / (Pocetna): [blokovi]
-- /o-nama (O nama): [blokovi]
-- ... (ostale stranice s blokovima)
-NAPOMENA: [sto junior treba znati, max 2 recenice]
-PROMPT;
-    }
-
-    /**
-     * Create Laravel project and install Tessera core.
-     */
-    private function createProject(): bool
-    {
-        Console::line();
-        Console::spinner('Kreiram Laravel projekt...');
-
-        $exit = Console::exec(
-            "composer create-project laravel/laravel {$this->directory} --prefer-dist --no-interaction",
-        );
-
-        if ($exit !== 0) {
-            Console::error('composer create-project nije uspio.');
-
-            return false;
+        if (preg_match('/STACK:\s*(\w+)/i', $response->output, $m)) {
+            $stackName = strtolower(trim($m[1]));
         }
 
-        Console::success('Laravel projekt kreiran');
-
-        // Install core Tessera packages
-        Console::spinner('Instaliram Tessera pakete...');
-
-        $packages = [
-            'filament/filament',
-            'awcodes/filament-curator',
-            'spatie/laravel-permission',
-            'spatie/laravel-translatable',
-            'spatie/laravel-sluggable',
-            'spatie/laravel-tags',
-            'spatie/laravel-medialibrary',
-            'spatie/laravel-sitemap',
-            'spatie/laravel-honeypot',
-            'intervention/image',
-            'staudenmeir/laravel-adjacency-list',
-        ];
-
-        $packageList = implode(' ', $packages);
-
-        $exit = Console::exec(
-            "composer require {$packageList} --no-interaction",
-            $this->fullPath,
-        );
-
-        if ($exit !== 0) {
-            Console::warn('Neki paketi se mozda nisu instalirali. Nastavljam...');
+        $reason = '';
+        if (preg_match('/REASON:\s*(.+)/i', $response->output, $m)) {
+            $reason = trim($m[1]);
         }
 
-        Console::success('Core paketi instalirani');
+        $stack = StackRegistry::get($stackName);
 
-        // Dev packages
-        Console::spinner('Instaliram dev alate...');
-
-        $devPackages = [
-            'laravel/boost',
-            'laravel/pint',
-            'laravel/telescope',
-            'larastan/larastan',
-        ];
-
-        Console::exec(
-            'composer require --dev ' . implode(' ', $devPackages) . ' --no-interaction',
-            $this->fullPath,
-        );
-
-        Console::success('Dev alati instalirani');
-
-        return true;
-    }
-
-    /**
-     * Let AI configure and scaffold the project.
-     */
-    private function scaffoldWithAi(array $requirements, string $plan): bool
-    {
-        Console::line();
-        Console::spinner('AI konfigurira i gradi projekt...');
-
-        $prompt = $this->buildScaffoldPrompt($requirements, $plan);
-
-        $response = $this->ai->execute($prompt, $this->fullPath, 600);
-
-        if (! $response->success) {
-            Console::error('AI scaffold nije uspio: ' . $response->error);
-            Console::line('Mozda trebas pokrenuti rucno. Projekt je kreiran u: ' . $this->fullPath);
-
-            return false;
+        if (! $stack) {
+            Console::warn("Nepoznat stack '{$stackName}'. Koristim Laravel.");
+            $stack = StackRegistry::get('laravel');
         }
 
         Console::line();
-        Console::line($response->output);
-        Console::line();
-        Console::success('AI scaffold zavrsen');
+        Console::success("Odabrano: {$stack->label()}");
 
-        return true;
-    }
-
-    private function buildScaffoldPrompt(array $requirements, string $plan): string
-    {
-        $desc = $requirements['description'];
-        $langs = implode(', ', $requirements['languages']);
-
-        return <<<PROMPT
-Ti si Tessera AI senior developer. Projekt je UPRAVO kreiran s Laravel 12.
-Radis u project root direktoriju. Tvoj posao je KOMPLETNO postaviti projekt.
-
-OPIS PROJEKTA: {$desc}
-JEZICI: {$langs}
-
-AI PLAN (koji je vec odobren):
-{$plan}
-
-NAPRAVI SVE OVO REDOM:
-
-1. FILAMENT SETUP
-   - php artisan filament:install --panels
-   - Kreiraj admin usera: admin@tessera.test / password
-   - Registriraj CuratorPlugin u AdminPanelProvider
-
-2. DIREKTORIJ STRUKTURA
-   Kreiraj Tessera strukturu:
-   - app/Core/Models/ (Page, Block, Navigation, Setting)
-   - app/Core/Services/ (PageRenderer, BlockRegistry, ThemeManager)
-   - app/Core/Http/PageController.php
-   - app/Modules/ (za svaki aktivni modul)
-   - resources/views/themes/default/ (layouts, blocks, partials)
-   - .ai/ direktorij s dokumentacijom
-
-3. MIGRACIJE
-   Kreiraj i pokreni migracije za:
-   - pages (title, slug, meta_title, meta_description, meta_image, is_published)
-   - blocks (page_id, type, data JSON, order, visible)
-   - navigations (label, url, page_id, parent_id, position, location)
-   - settings (key, value JSON, group)
-   - Modul-specificne tablice prema planu
-
-4. MODELI
-   Kreiraj Eloquent modele s:
-   - fillable, casts, relacije
-   - Scopes (published, ordered, itd.)
-   - Translatable trait ako je visejezicno
-
-5. TEMA
-   Kreiraj default temu:
-   - layouts/master.blade.php (Tailwind 4, responsive, SEO meta)
-   - partials/header.blade.php (navigacija)
-   - partials/footer.blade.php
-   - blocks/ — po jedan blade za svaki tip bloka koristen u planu
-   - theme.css s CSS varijablama za boje
-
-6. BLOCK REGISTRY
-   Registriraj sve blok tipove:
-   - hero, text, text-image, feature-cards, gallery-grid, contact-form,
-     contact-info, faq-accordion, cta-banner, testimonials, itd.
-
-7. PAGE CONTROLLER + ROUTING
-   - PageController koji resolve-a stranicu po slug-u i renderira blokove
-   - Route: catch-all u routes/web.php (ali NAKON Filament ruta)
-   - Registriraj catch-all u bootstrap/app.php then: callback
-
-8. STRANICE I SADRZAJ
-   Kreiraj stranice prema planu sa REALNIM placeholder sadrzajem.
-   Svaka stranica treba:
-   - SEO meta (title, description)
-   - Blokove u smislenom redoslijedu
-   - Realan tekst (ne Lorem ipsum)
-
-9. NAVIGACIJA
-   Kreiraj header navigaciju za sve stranice.
-
-10. FILAMENT RESOURCES
-    Kreiraj PageResource s Builder poljem za blokove.
-    Svaki blok tip ima svoje forme u Builderu.
-
-11. KONFIGURACIJA
-    - config/platform.php (site name, default_theme, default_locale, languages)
-    - config/ai.php (tools, context)
-    - .env updates (APP_NAME, DB connection)
-
-12. CLAUDE.md
-    Kopiraj ili kreiraj CLAUDE.md u project root s Tessera konvencijama.
-
-13. NPM
-    - npm install
-    - Konfiguriraj Tailwind 4 (app.css)
-    - npm run build
-
-VAZNO:
-- Svaki fajl MORA imati declare(strict_types=1)
-- Koristi typed properties i return types svugdje
-- NE koristi Lorem ipsum — sadrzaj mora biti relevantan za projekt
-- Provjeri da php artisan migrate radi bez gresaka
-- Provjeri da se stranice renderiraju
-
-JAVI NA KRAJU:
-- Popis svega sto si napravio
-- Kako pokrenuti dev server (php artisan serve)
-- Admin panel URL i kredencijali
-- Sto junior treba vizualno provjeriti
-PROMPT;
-    }
-
-    private function finalSetup(): void
-    {
-        // Run migrations
-        Console::spinner('Pokrecem migracije...');
-        Console::exec('php artisan migrate --force', $this->fullPath);
-
-        // Build assets
-        Console::spinner('Buildamo assets...');
-        $npm = Console::execSilent('npm --version');
-
-        if ($npm['exit'] === 0) {
-            Console::exec('npm install', $this->fullPath);
-            Console::exec('npm run build', $this->fullPath);
+        if ($reason) {
+            Console::line("  Razlog: {$reason}");
         }
 
-        // Cache
-        Console::exec('php artisan config:cache', $this->fullPath);
-        Console::exec('php artisan route:cache', $this->fullPath);
-        Console::exec('php artisan view:cache', $this->fullPath);
-        Console::exec('php artisan filament:cache-components', $this->fullPath);
+        return $stack;
     }
 
-    private function showComplete(): void
+    private function showComplete(StackInterface $stack): void
     {
+        $info = $stack->completionInfo($this->directory);
+
         Console::line();
         Console::cyan('╔══════════════════════════════════════╗');
         Console::cyan('║         PROJEKT JE SPREMAN!          ║');
         Console::cyan('╚══════════════════════════════════════╝');
         Console::line();
-        Console::line("  cd {$this->directory}");
-        Console::line('  php artisan serve');
+
+        foreach ($info['commands'] as $cmd) {
+            Console::line("  {$cmd}");
+        }
+
         Console::line();
-        Console::line('  Stranica: http://localhost:8000');
-        Console::line('  Admin:    http://localhost:8000/admin');
-        Console::line('  Login:    admin@tessera.test / password');
+
+        foreach ($info['urls'] as $label => $url) {
+            Console::line("  {$label}: {$url}");
+        }
+
         Console::line();
-        Console::line('  Za dalje promjene koristi:');
-        Console::line('    php artisan tessera "sto trebas"');
+        Console::line('  Za dalje promjene:');
+        Console::line('    tessera "sto trebas"');
         Console::line();
+    }
+
+    private function formatConversation(array $conversation): string
+    {
+        return implode("\n", array_map(
+            fn ($entry) => ($entry['role'] === 'junior' ? 'JUNIOR' : 'AI') . ': ' . $entry['text'],
+            $conversation,
+        ));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function parseRequirements(string $aiOutput, array $conversation): array
+    {
+        $get = function (string $key) use ($aiOutput): string {
+            if (preg_match('/' . $key . ':\s*(.+)/i', $aiOutput, $m)) {
+                return trim($m[1]);
+            }
+
+            return '';
+        };
+
+        $languages = array_map('trim', explode(',', $get('LANGUAGES') ?: 'hr'));
+        $needsShop = in_array(strtolower($get('NEEDS_SHOP')), ['da', 'yes', 'true'], true);
+        $needsMobile = in_array(strtolower($get('NEEDS_MOBILE')), ['da', 'yes', 'true'], true);
+        $needsRealtime = in_array(strtolower($get('NEEDS_REALTIME')), ['da', 'yes', 'true'], true);
+
+        return [
+            'description' => $get('DESCRIPTION') ?: 'Web projekt',
+            'languages' => $languages,
+            'needs_shop' => $needsShop,
+            'needs_mobile' => $needsMobile,
+            'needs_realtime' => $needsRealtime,
+            'expected_users' => $get('EXPECTED_USERS') ?: 'malo',
+            'special' => $get('SPECIAL') ?: '',
+            'conversation' => $conversation,
+        ];
     }
 }
