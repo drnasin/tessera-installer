@@ -1,162 +1,162 @@
 # Tessera Installer
 
-Kreiraj novi projekt jednom komandom. AI odlucuje o svemu — ti samo opisujes sto trebas.
+Create a new project with a single command. AI decides everything — you just describe what you need.
 
-## Instalacija
+## Installation
 
 ```bash
 composer global require tessera/installer
 ```
 
-Provjeri da je Composer `global bin` direktorij u PATH-u:
+Make sure the Composer `global bin` directory is in your PATH:
 - **Windows:** `%APPDATA%\Composer\vendor\bin`
 - **macOS/Linux:** `~/.composer/vendor/bin`
 
-## Kako koristiti
+## Usage
 
 ```bash
-tessera new moj-projekt
+tessera new my-project
 ```
 
-To je to. AI ce te pitati par pitanja i sve napraviti.
+That's it. AI will ask you a few questions and set everything up.
 
-## Sto se dogada kad pokrenes `tessera new`
+## What happens when you run `tessera new`
 
 ```
-$ tessera new moj-restoran
+$ tessera new my-restaurant
 
 ╔══════════════════════════════════════╗
 ║        TESSERA — AI Architect        ║
-║    Opisi sto trebas, AI ce odluciti  ║
+║   Describe what you need, AI decides ║
 ╚══════════════════════════════════════╝
 
 ✓ AI: claude
-Dostupni stackovi:
+Available stacks:
   ✓ Laravel + Filament (Tessera CMS)
   ✓ Node.js (Next.js / Express)
   ✓ Flutter (Mobile + Web App)
   ✓ Static Site (HTML + Tailwind)
 
-AI: Bok! Kakav projekt pravis?
-> Web stranica za restoran u Splitu, trebaju jelovnik i rezervacije
+AI: Hi! What kind of project are you building?
+> A website for a restaurant in Split, needs a menu and reservations
 
-AI: Razumijem. Trebaju li vise jezika?
-> Da, hrvatski i engleski
+AI: Got it. Do you need multiple languages?
+> Yes, Croatian and English
 
-AI bira tehnologiju...
-✓ Odabrano: Laravel + Filament (Tessera CMS)
+AI is choosing technology...
+✓ Selected: Laravel + Filament (Tessera CMS)
 
-Nastavljamo? [Y/n]: Y
+Continue? [Y/n]: Y
 
-⏳ Kreiram Laravel projekt...
-✓ Laravel projekt kreiran
-⏳ Instaliram Tessera pakete...
-✓ Core paketi instalirani
-⏳ AI konfigurira i gradi projekt...
-✓ AI scaffold zavrsen
+⏳ Creating Laravel project...
+✓ Laravel project created
+⏳ Installing Tessera packages...
+✓ Core packages installed
+⏳ AI is configuring and building the project...
+✓ AI scaffold complete
 
 ╔══════════════════════════════════════╗
-║         PROJEKT JE SPREMAN!          ║
+║         PROJECT IS READY!            ║
 ╚══════════════════════════════════════╝
 
-  cd moj-restoran
+  cd my-restaurant
   php artisan serve
 
-  Stranica: http://localhost:8000
-  Admin:    http://localhost:8000/admin
-  Login:    admin@tessera.test / password
+  Site:   http://localhost:8000
+  Admin:  http://localhost:8000/admin
+  Login:  admin@tessera.test / password
 ```
 
-## Kako AI bira tehnologiju
+## How AI picks the technology
 
-Ne moras znati sto je Laravel ili Flutter. Samo opisi sto trebas:
+You don't need to know what Laravel or Flutter is. Just describe what you need:
 
-| Sto kazes | Sto AI odabere |
+| What you say | What AI picks |
 |---|---|
-| "web stranica za restoran" | Laravel (CMS s admin panelom) |
-| "mobilna app za dostavu" | Flutter (iOS + Android) |
-| "API za chat aplikaciju s 10000 korisnika" | Go (high-performance backend) |
-| "SaaS dashboard s React frontendom" | Node.js (Next.js + API) |
-| "landing stranica za event" | Static (HTML + Tailwind) |
+| "website for a restaurant" | Laravel (CMS with admin panel) |
+| "mobile app for delivery" | Flutter (iOS + Android) |
+| "API for a chat app with 10,000 users" | Go (high-performance backend) |
+| "SaaS dashboard with React frontend" | Node.js (Next.js + API) |
+| "landing page for an event" | Static (HTML + Tailwind) |
 
-AI gleda sto si opisao i sam odluci. Ako se ne slazes, mozes reci "ne, radije Laravel" i AI ce promijeniti odluku.
+AI looks at what you described and decides on its own. If you disagree, just say "no, I'd rather use Laravel" and AI will change its decision.
 
-## Dostupni stackovi
+## Available Stacks
 
-### Laravel + Filament (potpuno autonomno)
-Web stranice, CMS-ovi, e-commerce, admin paneli. AI sam postavlja sve — stranice, blokove, module, temu, SEO.
+### Laravel + Filament (fully autonomous)
+Websites, CMS, e-commerce, admin panels. AI sets up everything — pages, blocks, modules, theme, SEO.
 
 ### Node.js / Next.js
-API serveri, SaaS platforme, React/Vue aplikacije. AI generira strukturu i pocetni kod.
+API servers, SaaS platforms, React/Vue applications. AI generates the structure and starter code.
 
 ### Go
-High-performance backend-i, microservisi, real-time sustavi. AI generira projekt s Chi routerom i Prisma/GORM.
+High-performance backends, microservices, real-time systems. AI generates a project with Chi router and Prisma/GORM.
 
 ### Flutter
-Mobilne aplikacije (iOS + Android + Web). AI kreira projekt s Riverpod state managementom i Material 3 temom.
+Mobile applications (iOS + Android + Web). AI creates a project with Riverpod state management and Material 3 theme.
 
 ### Static Site
-Jednostavne landing stranice bez backend-a. HTML + Tailwind + Alpine.js. Spreman za deploy na Netlify/Vercel.
+Simple landing pages without a backend. HTML + Tailwind + Alpine.js. Ready to deploy on Netlify/Vercel.
 
-## Preduvjeti
+## Prerequisites
 
-Obavezno:
+Required:
 - **PHP 8.2+** — `php --version`
 - **Composer** — `composer --version`
-- **AI CLI alat** — barem jedan od:
+- **AI CLI tool** — at least one of:
 
-| Alat | Instalacija | Provjera |
+| Tool | Installation | Check |
 |---|---|---|
 | Claude | `npm install -g @anthropic-ai/claude-code` | `claude --version` |
 | Codex | `npm install -g @openai/codex` | `codex --version` |
 | Gemini | `npm install -g @google/gemini-cli` | `gemini --version` |
 
-Opcionalno (ovisi o odabranom stacku):
-- **Node.js 20+** — za Node.js stack i npm pakete
-- **Go 1.22+** — za Go stack
-- **Flutter SDK** — za Flutter stack
+Optional (depends on the chosen stack):
+- **Node.js 20+** — for Node.js stack and npm packages
+- **Go 1.22+** — for Go stack
+- **Flutter SDK** — for Flutter stack
 
-## Nakon kreiranja projekta
+## After creating a project
 
 ```bash
-cd moj-projekt
+cd my-project
 
-# Pokreni dev server
+# Start dev server
 php artisan serve
 
-# AI chat u terminalu
+# AI chat in terminal
 php artisan tessera
 
-# Direktan zahtjev
-php artisan tessera "dodaj galeriju na pocetnu stranicu"
+# Direct request
+php artisan tessera "add a gallery to the homepage"
 
-# Popravi gresku
+# Fix an error
 php artisan tessera --fix
 
-# AI pregled projekta
+# AI project review
 php artisan tessera --audit
 ```
 
-U admin panelu (`/admin`) imas AI chat widget u donjem desnom kutu. Prati sto radis i nudi pomoc.
+In the admin panel (`/admin`) there's an AI chat widget in the bottom-right corner. It tracks what you're doing and offers help.
 
-## Kako dodati novi stack
+## Adding a new stack
 
-Ako si developer i zelis dodati podrsku za novu tehnologiju (npr. Python/Django):
+If you're a developer and want to add support for a new technology (e.g. Python/Django):
 
-1. Kreiraj `src/Stacks/PythonStack.php` koji implementira `StackInterface`
-2. Registriraj ga u `StackRegistry::init()`
-3. AI automatski zna za novi stack
+1. Create `src/Stacks/PythonStack.php` implementing `StackInterface`
+2. Register it in `StackRegistry::init()`
+3. AI automatically knows about the new stack
 
 ```php
 final class PythonStack implements StackInterface
 {
     public function name(): string { return 'python'; }
     public function label(): string { return 'Python (Django)'; }
-    public function description(): string { return 'Web aplikacije, API, ML...'; }
-    // ... implementiraj scaffold(), preflight(), postSetup()
+    public function description(): string { return 'Web apps, APIs, ML...'; }
+    // ... implement scaffold(), preflight(), postSetup()
 }
 ```
 
-## Licenca
+## License
 
-Privatni projekt.
+Private project.
