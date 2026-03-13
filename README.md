@@ -12,13 +12,54 @@ Make sure the Composer `global bin` directory is in your PATH:
 - **Windows:** `%APPDATA%\Composer\vendor\bin`
 - **macOS/Linux:** `~/.composer/vendor/bin`
 
-## Usage
+Verify it works:
+```bash
+tessera --version
+```
+
+## Quick Start
 
 ```bash
 tessera new my-project
 ```
 
-That's it. AI will ask you a few questions and set everything up.
+That's it. AI will ask you a few questions about your project — what it does, what languages you need, what design style you want — and build everything.
+
+## System Check
+
+Before creating a project, check if your system is ready:
+
+```bash
+tessera doctor
+```
+
+```
+  TESSERA DOCTOR — System Check
+
+System:
+  OS: windows
+  Package manager: scoop
+
+Required:
+✓ PHP — PHP 8.5.2
+✓ Composer — 2.9.2
+
+AI tools (need at least one):
+✓ claude — 2.1.75
+✓ gemini — 0.32.1
+✓ codex — 0.98.0
+
+Optional (depends on stack):
+✓ Node.js — v25.8.0
+✓ Go — go1.25.0
+  Flutter — not installed
+✓ Docker — 28.4.0
+✓ Git — 2.45.1
+
+✓ Disk space: 86.3 GB free
+
+  All good! Run: tessera new my-project
+```
 
 ## What happens when you run `tessera new`
 
@@ -31,29 +72,40 @@ $ tessera new my-restaurant
 ╚══════════════════════════════════════╝
 
 ✓ AI: claude
-Available stacks:
-  ✓ Laravel + Filament (Tessera CMS)
-  ✓ Node.js (Next.js / Express)
-  ✓ Flutter (Mobile + Web App)
-  ✓ Static Site (HTML + Tailwind)
+✓ OS: windows (scoop)
 
-AI: Hi! What kind of project are you building?
+AI: What kind of project are you building?
 > A website for a restaurant in Split, needs a menu and reservations
 
-AI: Got it. Do you need multiple languages?
+AI: Do you need multiple languages?
 > Yes, Croatian and English
+
+AI: Would you like a designed frontend? Any style or color preferences?
+> Yes, modern and warm. Earth tones — brown, cream, olive green.
 
 AI is choosing technology...
 ✓ Selected: Laravel + Filament (Tessera CMS)
 
 Continue? [Y/n]: Y
 
-⏳ Creating Laravel project...
-✓ Laravel project created
-⏳ Installing Tessera packages...
-✓ Core packages installed
-⏳ AI is configuring and building the project...
-✓ AI scaffold complete
+Building your project — this takes about 10-15 minutes.
+  Go grab a coffee, AI is doing all the work.
+
+[1/7] Create Laravel project
+✓ [1/7] Create Laravel project
+⏳ [2/7] Installing packages...
+✓ Install packages
+⏳ [3/7] Setting up admin panel...
+✓ Filament panel setup
+⏳ [4/7] Publishing configs...
+⏳ [5/7] Creating project structure...
+[6/7] AI is building your project — this is the big one...
+  ✓ Creating database models and services
+  ✓ Designing frontend theme and pages
+  ✓ Building admin panel
+  ✓ Writing content and seeding data
+  ✓ Generating tests
+  ✓ All tests passing
 
 ╔══════════════════════════════════════╗
 ║         PROJECT IS READY!            ║
@@ -81,22 +133,52 @@ You don't need to know what Laravel or Flutter is. Just describe what you need:
 
 AI looks at what you described and decides on its own. If you disagree, just say "no, I'd rather use Laravel" and AI will change its decision.
 
+## Features
+
+### OS Awareness
+AI detects your operating system, package managers, and installed tools. Every AI prompt includes full system context — it knows if you're on Windows with scoop, macOS with brew, or Ubuntu with apt. If a dependency is missing, AI knows how to install it on your specific OS.
+
+### Auto-Install Dependencies
+If the chosen stack needs a tool you don't have (e.g., Node.js for frontend assets), AI offers to install it automatically using the right package manager for your OS.
+
+### Design Questions
+AI asks about your design preferences — style (modern, minimal, bold), colors, mood. These preferences are passed to the scaffold prompts, so the generated frontend matches what you described.
+
+### Self-Healing Tests
+After building the project, AI generates tests and runs them. If any test fails, AI analyzes the output and fixes the issue — either in the test or in the code. Up to 3 attempts.
+
+### Project Memory
+AI maintains state in `.tessera/state.json` — tracking completed steps, decisions, and notes. If something fails, AI knows exactly where it stopped and what was already done.
+
+### Step-by-Step Progress
+Clear progress indicators (`[1/7]`, `[2/7]`...) with human-friendly descriptions so you always know what's happening.
+
 ## Available Stacks
 
 ### Laravel + Filament (fully autonomous)
-Websites, CMS, e-commerce, admin panels. AI sets up everything — pages, blocks, modules, theme, SEO.
+Websites, CMS, e-commerce, admin panels. AI sets up everything — models, migrations, theme, pages, blocks, admin resources, content, and tests.
 
 ### Node.js / Next.js
-API servers, SaaS platforms, React/Vue applications. AI generates the structure and starter code.
+API servers, SaaS platforms, React/Vue applications. AI generates the full project structure with TypeScript, Prisma, and styled frontend.
 
 ### Go
-High-performance backends, microservices, real-time systems. AI generates a project with Chi router and Prisma/GORM.
+High-performance backends, microservices, real-time systems. AI generates a project with Chi/Gin router, GORM, Docker, and tests.
 
 ### Flutter
-Mobile applications (iOS + Android + Web). AI creates a project with Riverpod state management and Material 3 theme.
+Mobile applications (iOS + Android + Web). AI creates a project with Riverpod, go_router, Material 3 theme, and widget tests.
 
 ### Static Site
-Simple landing pages without a backend. HTML + Tailwind + Alpine.js. Ready to deploy on Netlify/Vercel.
+Simple landing pages without a backend. HTML + Tailwind + Alpine.js. Styled to your preferences, ready to deploy on Netlify/Vercel.
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `tessera new {name}` | Create a new project |
+| `tessera new {name} --force` | Overwrite existing directory |
+| `tessera doctor` | Check system readiness |
+| `tessera tools` | Show available AI tools |
+| `tessera --version` | Show version |
 
 ## Prerequisites
 
@@ -111,9 +193,9 @@ Required:
 | Codex | `npm install -g @openai/codex` | `codex --version` |
 | Gemini | `npm install -g @google/gemini-cli` | `gemini --version` |
 
-Optional (depends on the chosen stack):
-- **Node.js 20+** — for Node.js stack and npm packages
-- **Go 1.22+** — for Go stack
+Optional (auto-installed if missing):
+- **Node.js** — for frontend assets and Node.js stack
+- **Go** — for Go stack
 - **Flutter SDK** — for Flutter stack
 
 ## After creating a project
@@ -141,11 +223,7 @@ In the admin panel (`/admin`) there's an AI chat widget in the bottom-right corn
 
 ## Adding a new stack
 
-If you're a developer and want to add support for a new technology (e.g. Python/Django):
-
-1. Create `src/Stacks/PythonStack.php` implementing `StackInterface`
-2. Register it in `StackRegistry::init()`
-3. AI automatically knows about the new stack
+Create `src/Stacks/PythonStack.php` implementing `StackInterface`, register it in `StackRegistry::init()`, and AI automatically knows about it.
 
 ```php
 final class PythonStack implements StackInterface
@@ -153,7 +231,7 @@ final class PythonStack implements StackInterface
     public function name(): string { return 'python'; }
     public function label(): string { return 'Python (Django)'; }
     public function description(): string { return 'Web apps, APIs, ML...'; }
-    // ... implement scaffold(), preflight(), postSetup()
+    // ... implement scaffold(), preflight(), postSetup(), completionInfo()
 }
 ```
 
