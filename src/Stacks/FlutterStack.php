@@ -66,6 +66,10 @@ final class FlutterStack implements StackInterface
         $designStyle = $requirements['design_style'] ?? 'modern, clean';
         $designColors = $requirements['design_colors'] ?? 'use Material 3 default palette';
         $langs = implode(', ', $requirements['languages'] ?? ['en']);
+        $paymentProviders = $requirements['payment_providers'] ?? [];
+        $payments = ! empty($paymentProviders) ? implode(', ', $paymentProviders) : 'none';
+        $shop = ($requirements['needs_shop'] ?? false) ? 'YES' : 'NO';
+        $country = $requirements['country'] ?? '';
         $versions = $this->detectVersions();
         $systemContext = $system->buildAiContext();
 
@@ -76,7 +80,7 @@ final class FlutterStack implements StackInterface
         // Step 1: Create Flutter project
         $parentRunner = new StepRunner($ai, getcwd());
         $result = $parentRunner->runCommand(
-            name: '[1/4] Create Flutter project',
+            name: '[1/5] Create Flutter project',
             command: "flutter create {$directory} --org com.tessera --no-pub",
             verify: fn (): ?string => is_file($this->fullPath . '/pubspec.yaml') ? null : 'pubspec.yaml not found',
             fixHint: "Run: flutter create {$directory} --org com.tessera",
@@ -86,28 +90,83 @@ final class FlutterStack implements StackInterface
             return false;
         }
 
-        // Step 2: AI configure
+        // Step 2: AI configure — senior dev reasoning
         $this->steps->runAi(
-            name: '[2/4] Configuring app structure and screens',
+            name: '[2/5] Configuring app structure and screens',
             prompt: <<<PROMPT
-A Flutter project was just created. Configure it for production.
+You are a SENIOR Flutter/Dart developer configuring a project for production.
+A Flutter project was just created with `flutter create`. Now make it production-ready.
+Think carefully about what THIS specific app needs.
 
 {$systemContext}
 
 RUNTIME: {$versions}
-DESCRIPTION: {$desc}
+PROJECT: {$desc}
 LANGUAGES: {$langs}
 DESIGN STYLE: {$designStyle}
 DESIGN COLORS: {$designColors}
+E-COMMERCE: {$shop}
+PAYMENT PROVIDERS: {$payments}
+COUNTRY: {$country}
 
-Do:
-1. Add to pubspec.yaml: riverpod, dio, go_router, freezed, json_annotation
-2. Create structure: lib/features/, lib/core/, lib/shared/
-3. Set up routing (go_router), state management (Riverpod), API layer (Dio)
-4. Create screens based on description with realistic UI
-5. Material 3 theme with colors matching: {$designColors}
-6. Support for languages: {$langs}
-7. README.md with instructions
+STEP 1 — THINK (do not skip):
+- What screens does this app need? (Home, Profile, Settings, Product List, Cart, Checkout?)
+- What data models are needed? (User, Product, Order, Message?)
+- Does it need authentication? (most mobile apps do)
+- Does it need payments? Which SDK? (stripe_sdk, in_app_purchase?)
+- Does it need push notifications?
+- Does it need a backend? (Firebase, Supabase, custom API?)
+- Does it need offline support? (local database, caching?)
+- What state management fits? (Riverpod for most cases)
+
+STEP 2 — CONFIGURE:
+1. pubspec.yaml — add ALL needed dependencies:
+   - State management: flutter_riverpod
+   - Routing: go_router
+   - HTTP: dio
+   - Code generation: freezed, json_serializable, build_runner
+   - Local storage: shared_preferences or hive
+   - IF authentication: firebase_auth or supabase_flutter
+   - IF e-commerce: payment SDKs for {$payments}
+   - IF push notifications: firebase_messaging
+   - IF offline: sqflite or isar
+
+2. Project structure:
+   lib/
+     core/ — theme, constants, utils, extensions
+     features/ — one folder per feature (auth/, home/, products/, cart/, etc.)
+       each feature: screens/, widgets/, providers/, models/
+     shared/ — shared widgets, services, models
+     router.dart — go_router configuration
+     app.dart — MaterialApp.router with theme
+
+3. Theme (lib/core/theme.dart):
+   - Material 3 with ColorScheme matching: {$designColors}
+   - Style: {$designStyle}
+   - Custom TextTheme, ButtonTheme, CardTheme
+   - Light and dark mode support
+
+4. Screens — realistic UI for THIS app:
+   - Create screens based on what the app needs (think step 1)
+   - Each screen must look professional — proper spacing, typography, icons
+   - Use Material 3 components (FilledButton, Card, NavigationBar)
+   - Content in {$langs}
+
+5. IF E-COMMERCE ({$shop}):
+   - Product listing with grid/list toggle, search, filtering
+   - Product detail screen with images, variants, add-to-cart
+   - Cart screen with quantity management
+   - Checkout flow with payment integration ({$payments})
+   - Order history screen
+   - Define required API configuration in a config class
+
+6. .env.example or lib/core/config.dart with ALL needed configuration:
+   - API base URL
+   - Payment provider keys
+   - Firebase config (if used)
+   Each config must have a comment explaining where to get the value
+
+7. README.md with setup instructions, required accounts, architecture overview
 
 IMPORTANT: Use features appropriate for the detected Dart/Flutter version.
 PROMPT,
@@ -118,13 +177,16 @@ PROMPT,
 
         // Step 3: Generate tests
         $this->steps->runAi(
-            name: '[3/4] Generating tests',
+            name: '[3/5] Generating tests',
             prompt: <<<PROMPT
-Create Flutter/Dart tests for this project in test/ directory:
-1. Widget tests for key screens
-2. Unit tests for services/providers
-3. Use flutter_test package
+Create Flutter/Dart tests for this project. Read the project first.
 
+test/ directory:
+1. Widget tests — test that key screens render without errors, test user interactions
+2. Unit tests — test providers/services, data models, business logic
+3. IF e-commerce: test cart operations, price calculations, order creation
+
+Use flutter_test and mocktail for mocking.
 IMPORTANT: Write ONLY tests that will PASS with the current codebase.
 PROMPT,
             verify: null,
@@ -132,15 +194,55 @@ PROMPT,
             timeout: 300,
         );
 
-        // Step 4: Run tests
+        // Step 4: Run tests and fix
         $this->steps->runAi(
-            name: '[4/4] Running and fixing tests',
+            name: '[4/5] Running and fixing tests',
             prompt: <<<PROMPT
 Run the project tests with: flutter test
 If any tests fail, analyze the output and fix either the test or the code.
 Do NOT delete tests — fix them.
 PROMPT,
             verify: null,
+            skippable: true,
+            timeout: 300,
+        );
+
+        // Step 5: SETUP.md — developer handoff
+        $this->steps->runAi(
+            name: '[5/5] Generating setup instructions',
+            prompt: <<<PROMPT
+Read the entire project you just built. Generate a SETUP.md file in the project root.
+
+PROJECT: {$desc}
+E-COMMERCE: {$shop}
+PAYMENT PROVIDERS: {$payments}
+COUNTRY: {$country}
+
+SETUP.md must include:
+
+1. QUICK START — flutter pub get, flutter run, available platforms
+2. REQUIRED ACCOUNTS & KEYS — for each service used:
+   - Exact config location (lib/core/config.dart or .env)
+   - What the key is, WHERE to get it (with URL to dashboard)
+   - Test/sandbox values if available
+3. FIREBASE SETUP (if used):
+   - Create Firebase project steps
+   - Download google-services.json / GoogleService-Info.plist
+   - Enable required services (Auth, Firestore, etc.)
+4. PAYMENT PROVIDER SETUP (if e-commerce) — for EACH provider ({$payments}):
+   - Mobile SDK setup steps (iOS/Android specific config)
+   - Test mode instructions and test card numbers
+   - Production switch checklist
+5. BUILDING FOR PRODUCTION:
+   - Android: signing, keystore, play store upload
+   - iOS: certificates, provisioning profiles, app store
+   - Web: flutter build web, deployment
+6. ARCHITECTURE OVERVIEW — folder structure, state management pattern, data flow
+7. COMMON TASKS — how to add a new screen, feature, API endpoint integration
+
+Write for a JUNIOR developer. Explain mobile-specific concepts briefly.
+PROMPT,
+            verify: fn (): ?string => is_file($this->fullPath . '/SETUP.md') ? null : 'SETUP.md not created',
             skippable: true,
             timeout: 300,
         );
@@ -171,6 +273,7 @@ PROMPT,
                 'Web' => 'flutter run -d chrome',
                 'iOS' => 'flutter run -d ios',
                 'Android' => 'flutter run -d android',
+                'Setup guide' => 'SETUP.md',
             ],
         ];
     }

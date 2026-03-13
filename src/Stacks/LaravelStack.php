@@ -88,7 +88,7 @@ final class LaravelStack implements StackInterface
         // Step 1: Create Laravel project (runs in parent dir since project doesn't exist yet)
         $parentRunner = new StepRunner($ai, getcwd());
         $result = $parentRunner->runCommand(
-            name: '[1/7] Create Laravel project',
+            name: '[1/8] Create Laravel project',
             command: "composer create-project laravel/laravel {$directory} --prefer-dist --no-interaction",
             verify: fn (): ?string => is_file($this->fullPath . '/artisan') ? null : 'artisan file not found',
             fixHint: "Run: composer create-project laravel/laravel {$directory} --prefer-dist",
@@ -100,34 +100,34 @@ final class LaravelStack implements StackInterface
 
         // Step 2: Install packages
         Console::line();
-        Console::spinner('[2/7] Installing packages...');
+        Console::spinner('[2/8] Installing packages...');
         if (! $this->installAllPackages()) {
             return false;
         }
 
         // Step 3: Filament setup
         Console::line();
-        Console::spinner('[3/7] Setting up admin panel...');
+        Console::spinner('[3/8] Setting up admin panel...');
         if (! $this->setupFilament()) {
             return false;
         }
 
         // Step 4: Publish configs
         Console::line();
-        Console::spinner('[4/7] Publishing configs...');
+        Console::spinner('[4/8] Publishing configs...');
         $this->publishConfigs();
 
         // Step 5: Create directory structure
         Console::line();
-        Console::spinner('[5/7] Creating project structure...');
+        Console::spinner('[5/8] Creating project structure...');
         if (! $this->createStructure()) {
             return false;
         }
 
         // Step 6: AI builds everything
         Console::line();
-        Console::bold('[6/7] AI is building your project — this is the big one...');
-        Console::line('  AI is creating models, pages, theme, and content.');
+        Console::bold('[6/8] AI is building your project — this is the big one...');
+        Console::line('  AI is creating models, theme, admin, content, and tests.');
         Console::line('  This takes a few minutes. Sit tight.');
         Console::line();
         if (! $this->aiScaffold()) {
@@ -174,6 +174,7 @@ final class LaravelStack implements StackInterface
                 'Site' => 'http://localhost:8000',
                 'Admin' => 'http://localhost:8000/admin',
                 'Login' => 'admin@tessera.test / password',
+                'Setup guide' => 'SETUP.md',
             ],
         ];
     }
@@ -203,6 +204,18 @@ final class LaravelStack implements StackInterface
             $packages[] = 'meilisearch/meilisearch-php';
             $packages[] = 'barryvdh/laravel-dompdf';
             $packages[] = 'maatwebsite/excel';
+
+            // Payment provider SDKs
+            $providers = $this->requirements['payment_providers'] ?? [];
+            if (in_array('stripe', $providers, true)) {
+                $packages[] = 'stripe/stripe-php';
+            }
+            if (in_array('mollie', $providers, true)) {
+                $packages[] = 'mollie/laravel-mollie';
+            }
+            if (in_array('paypal', $providers, true)) {
+                $packages[] = 'srmklive/paypal';
+            }
         }
 
         // Install all core + dev packages in one composer call (single autoload generation)
@@ -416,6 +429,9 @@ PROMPT,
         $needsFrontend = ($this->requirements['needs_frontend'] ?? true) ? 'YES' : 'NO';
         $designStyle = $this->requirements['design_style'] ?? 'modern, clean';
         $designColors = $this->requirements['design_colors'] ?? 'use appropriate colors for the business type';
+        $paymentProviders = $this->requirements['payment_providers'] ?? [];
+        $payments = ! empty($paymentProviders) ? implode(', ', $paymentProviders) : 'none';
+        $country = $this->requirements['country'] ?? '';
         $stackVersions = $this->detectVersions();
         $systemContext = $this->system->buildAiContext();
         $memoryContext = $this->memory->buildAiContext();
@@ -425,42 +441,72 @@ PROMPT,
         $this->steps->runAi(
             name: 'Creating database models and services',
             prompt: <<<PROMPT
-You are a Tessera AI senior developer building a project.
+You are a SENIOR Laravel developer building a Tessera CMS project from scratch.
+Think carefully about what THIS specific project needs before writing any code.
 
 {$systemContext}
 
 {$memoryContext}
 
-STACK: {$stackVersions}.
-You are working in the project root directory. The directory structure is already created.
+STACK: {$stackVersions}
+You are in the project root directory. Directory structure already exists.
 
-PROJECT DESCRIPTION: {$desc}
+PROJECT: {$desc}
 LANGUAGES: {$langs}
 E-COMMERCE: {$shop}
+PAYMENT PROVIDERS: {$payments}
+COUNTRY: {$country}
 
-CREATE:
+STEP 1 — THINK (do not skip this):
+Before creating anything, reason about what this project needs:
+- What entities does this business have? (Pages are always needed. But does it also have products? Services? Rooms? Menu items? Events?)
+- Does it need user accounts? (shop = yes, portfolio site = probably no)
+- Does it need payments? If yes, which provider SDK is already installed?
+- Does it need categories/tags? Search? Filtering?
+- What relationships exist between entities?
+
+STEP 2 — ALWAYS CREATE (every Tessera project has these):
 1. CORE MODELS in app/Core/Models/:
    - Page.php (title, slug, meta_title, meta_description, og_image, is_published, published_at)
    - Block.php (page_id, type, data JSON, order, is_visible)
+     CRITICAL: Block.data is a JSON column. Each block type stores its own structure.
+     Example: hero block data = {"heading": "...", "subheading": "...", "cta_text": "...", "cta_url": "...", "background_image": "..."}
    - Navigation.php (label, url, location, parent_id, order, is_active)
 
-2. MIGRATIONS for all core models
+2. MIGRATIONS for all models (use timestamps, soft deletes where appropriate)
 
 3. SERVICES in app/Core/Services/:
-   - PageRenderer.php — resolve page by slug, render with theme layout
-   - BlockRegistry.php — maps block type to blade view path
+   - PageRenderer.php — resolves page by slug, loads blocks, renders with theme
+   - BlockRegistry.php — maps block type string to blade view path
    - ThemeManager.php — returns active theme name
 
 4. HELPERS in app/Core/helpers.php:
-   - curator_url() helper for media
-   - module_active() helper
+   - curator_url(\$media): handles both numeric IDs (Curator) and legacy URL strings
+   - module_active(string \$module): checks if a module directory exists
 
 5. PageController in app/Core/Http/ — catch-all for /{slug?}
 
-6. Register helpers autoload in composer.json
+6. Register helpers autoload in composer.json "files" array
 
-IMPORTANT: declare(strict_types=1), typed properties, return types everywhere.
-Use SQLite as the default database.
+STEP 3 — IF E-COMMERCE ({$shop}):
+Create a full shop module in app/Modules/Shop/:
+- Models: Product, ProductVariant, Category, Cart, CartItem, Order, OrderItem, Coupon
+- Enums: OrderStatus, PaymentStatus, CouponType
+- PaymentGateway interface in Payments/ with implementations for: {$payments}
+  Each gateway must have: charge(), refund(), webhookHandler(), getConfigKeys()
+  getConfigKeys() returns array of .env keys needed (e.g., ['STRIPE_KEY', 'STRIPE_SECRET', 'STRIPE_WEBHOOK_SECRET'])
+- ShippingCalculator interface + zone-based implementation
+- Livewire components: ProductCard, ProductFilter, CartWidget, CartPage, Checkout
+- Shop routes in routes/shop.php (products, cart, checkout, webhooks)
+- config/shop.php (currency, tax_rate, shipping_zones, payment providers, free_shipping_threshold)
+- ShopSeeder with realistic sample data for THIS business type
+- ShopServiceProvider registered in bootstrap/providers.php
+
+IMPORTANT:
+- declare(strict_types=1), typed properties, return types EVERYWHERE
+- Use SQLite as default database
+- Every Livewire component must have a corresponding blade view
+- Payment gateways must define getConfigKeys() so we can tell the developer what to configure
 PROMPT,
             verify: function (): ?string {
                 if (! is_file($this->fullPath . '/app/Core/Models/Page.php')) {
@@ -480,43 +526,64 @@ PROMPT,
             name: 'Designing frontend theme and pages',
             prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Core models and services are already created.
+Read the Block model and BlockRegistry to understand the data flow.
 
-PROJECT DESCRIPTION: {$desc}
+PROJECT: {$desc}
 GENERATE FRONTEND: {$needsFrontend}
 DESIGN STYLE: {$designStyle}
 DESIGN COLORS: {$designColors}
+LANGUAGES: {$langs}
+
+CRITICAL — HOW BLOCKS WORK (you MUST understand this):
+Each block is a row in the database with type (string) and data (JSON).
+The frontend reads: \$block->data['key']
+The admin writes: Builder field with form fields per block type.
+These MUST match. If a hero block has data keys "heading", "subheading", "cta_text", "cta_url",
+then the blade view MUST use \$block->data['heading'], and the admin builder MUST have
+TextInput::make('heading'), TextInput::make('subheading'), etc.
+
+YOU decide what data keys each block type needs. Document them clearly.
 
 CREATE:
-1. THEME in resources/views/themes/default/:
-   - layouts/master.blade.php — HTML5, Tailwind 4, @vite, @livewireStyles/Scripts
-   - partials/header.blade.php — sticky nav, mobile menu, logo
-   - partials/footer.blade.php — simple footer with links, copyright
+1. THEME LAYOUT in resources/views/themes/default/:
+   - layouts/master.blade.php — HTML5, Tailwind 4 (via @vite), @livewireStyles/@livewireScripts
+   - partials/header.blade.php — sticky nav, mobile hamburger (Alpine.js x-data), logo, navigation items from DB
+   - partials/footer.blade.php — columns: links, contact info, social. Copyright year.
 
 2. BLOCK VIEWS in resources/views/themes/default/blocks/:
-   - hero.blade.php — large hero section with heading, subheading, CTA button, background
-   - text.blade.php, text-image.blade.php — content blocks
-   - feature-cards.blade.php — 3-4 cards with icons, titles, descriptions
-   - cta-banner.blade.php — call-to-action banner
-   - contact-form.blade.php — contact form with validation
-   - faq-accordion.blade.php — collapsible FAQ items
-   - gallery-masonry.blade.php — image gallery grid
-   - testimonials.blade.php — customer testimonials/reviews
+   Each block view receives \$block (Block model). Access data via \$block->data['key'].
 
-3. Routing in bootstrap/app.php — catch-all route for PageController (AFTER Filament routes)
+   For EVERY block view you create, document the expected data keys as a comment at the top:
+   {{-- Data keys: heading (string), subheading (string), cta_text (string), cta_url (string), background_image (int|string) --}}
 
-4. config/platform.php — site_name, theme, etc.
+   Create these blocks (adjust to what makes sense for THIS project):
+   - hero.blade.php — heading, subheading, CTA button, background (image or gradient)
+   - text.blade.php — rich text content block
+   - text-image.blade.php — text + image side by side (with alignment option)
+   - feature-cards.blade.php — array of cards, each with icon, title, description
+   - cta-banner.blade.php — call-to-action with heading, text, button
+   - contact-form.blade.php — Livewire contact form with validation
+   - faq-accordion.blade.php — collapsible items (Alpine.js)
+   - gallery-masonry.blade.php — grid of images from Curator
+   - testimonials.blade.php — customer reviews with name, text, rating
+   - Add MORE block types if THIS project needs them (e.g., menu-list for restaurant, pricing-table for SaaS, team-members, etc.)
 
-DESIGN INSTRUCTIONS:
-- Use Tailwind 4 utility classes for ALL styling
-- Design style: {$designStyle}
-- Color palette: {$designColors}
-- Must be RESPONSIVE (mobile-first)
-- Hero section must be visually striking with gradient or background color
-- Cards should have hover effects (shadow, scale)
-- Use proper spacing, typography hierarchy (text-4xl for headings, etc.)
-- Navigation must have mobile hamburger menu (Alpine.js x-data)
-- Footer with columns for links, contact info, social icons
-- All blocks must look PROFESSIONAL — not like a template, like a real website
+3. Routing: catch-all /{slug?} in bootstrap/app.php (AFTER Filament routes, in 'then:' callback)
+
+4. config/platform.php — site_name, default_theme, supported_locales
+
+DESIGN — make it look like a REAL website, not a template:
+- Style: {$designStyle}
+- Colors: {$designColors}
+- Mobile-first responsive design
+- Hero: visually striking, gradient or background image, large typography
+- Cards: hover effects (shadow-lg, scale-105 transition)
+- Typography hierarchy: text-5xl/6xl for hero, text-3xl for sections, proper line-height
+- Spacing: generous padding (py-16, py-24 for sections)
+- Navigation: sticky, transparent-to-solid on scroll (Alpine.js), hamburger on mobile
+- Footer: dark background, 3-4 columns, social icons
+- Images: use curator_url(\$block->data['image']) helper for all media
+- ALL content language: {$langs}
 PROMPT,
             verify: function (): ?string {
                 if (! is_file($this->fullPath . '/resources/views/themes/default/layouts/master.blade.php')) {
@@ -533,22 +600,49 @@ PROMPT,
         $this->steps->runAi(
             name: 'Building admin panel',
             prompt: <<<PROMPT
-CONTINUE working on the Tessera project. Models, theme, and views are already created.
+CONTINUE working on the Tessera project. Models, theme, and block views are already created.
+
+CRITICAL TASK: Read EVERY block blade view you created in resources/views/themes/default/blocks/.
+Look at the data key comments at the top of each file. The admin Builder MUST create form fields
+that match EXACTLY those data keys.
+
+Example: if hero.blade.php uses \$block->data['heading'], \$block->data['subheading'], \$block->data['cta_text']
+then PageResource Builder must have:
+Builder\Block::make('hero')->schema([
+    TextInput::make('heading')->required(),
+    TextInput::make('subheading'),
+    TextInput::make('cta_text'),
+    TextInput::make('cta_url'),
+    CuratorPicker::make('background_image'),
+])
 
 CREATE:
 1. FILAMENT RESOURCES:
-   - PageResource — Builder field for blocks, SEO tab, publish toggle
-   - NavigationResource — CRUD for navigation (header/footer groups)
+   - PageResource with tabs:
+     * Content tab: Builder field with ALL block types (read the blade views!)
+       - Each Builder\Block must have form fields matching the blade view's data keys
+       - Use appropriate field types: TextInput, Textarea, RichEditor, Toggle, Select, CuratorPicker
+       - For array data (like feature cards items), use Repeater inside the block
+     * SEO tab: meta_title, meta_description, og_image (CuratorPicker)
+     * Settings tab: is_published, published_at, slug (auto-generated from title)
+   - NavigationResource — CRUD with location (header/footer), parent_id, order, active toggle
 
-2. Register CuratorPlugin in AdminPanelProvider (if not already done)
+2. IF E-COMMERCE ({$shop}):
+   - ProductResource — name, slug, description, price, images, category, variants, active toggle
+   - CategoryResource — name, slug, parent, order
+   - OrderResource — read-only list with status filters, order details, customer info
+   - CouponResource — code, type (percent/fixed), value, valid dates, usage limits
 
-3. CLAUDE.md — Tessera conventions and instructions for AI
+3. Register CuratorPlugin in AdminPanelProvider (if not already done)
 
-4. .ai/platform.md — brief architecture overview
-5. .ai/conventions.md — coding conventions
-6. .ai/blocks.md — block types documentation
+4. Documentation files:
+   - CLAUDE.md — Tessera conventions for AI (block system, admin, how to add features)
+   - .ai/platform.md — architecture overview (models, services, relationships)
+   - .ai/conventions.md — coding standards (strict types, naming, where files go)
+   - .ai/blocks.md — EVERY block type with its data keys and admin field mapping
 
-IMPORTANT: PageResource must have a Builder field with block types.
+IMPORTANT: The admin and frontend MUST be in sync. If a block view reads a key,
+the admin MUST have a field that writes to that key. No exceptions.
 PROMPT,
             verify: function (): ?string {
                 // Check for any Resource file in Filament dir
@@ -570,27 +664,44 @@ PROMPT,
         $this->steps->runAi(
             name: 'Writing content and seeding data',
             prompt: <<<PROMPT
-CONTINUE working on the Tessera project. Everything is set up — models, views, admin.
+CONTINUE working on the Tessera project. Models, views, admin, and block views are all set up.
 
-PROJECT DESCRIPTION: {$desc}
+PROJECT: {$desc}
 LANGUAGES: {$langs}
+E-COMMERCE: {$shop}
+
+THINK: What pages does THIS specific business need?
+A restaurant needs: Home, Menu, About, Reservations, Contact.
+A web shop needs: Home, Products, About, FAQ, Contact.
+A portfolio needs: Home, Projects, About, Contact.
+An agency needs: Home, Services, Portfolio, Team, Contact.
+Decide based on the project description.
 
 CREATE:
 1. SEEDER — DatabaseSeeder that creates:
-   - Home page with blocks: hero (with compelling headline + CTA), feature-cards (3-4 key selling points), testimonials (2-3 reviews), cta-banner
-   - About page with blocks: text-image (company story), feature-cards (team/values), gallery-masonry
-   - FAQ page with blocks: hero (smaller), faq-accordion (6-8 realistic questions)
-   - Contact page with blocks: contact-form, text (address/phone/email)
-   - Header navigation for all pages
-   - Footer navigation
+   - Pages appropriate for THIS business (see above — think about it)
+   - Each page with blocks that make sense for its purpose
+   - CRITICAL: Block data keys MUST match what the blade views expect!
+     Read the block views you created to know the exact key names.
+     Example: if hero.blade.php reads \$block->data['heading'], the seeder must set ['heading' => '...']
+   - Header navigation linking to all main pages
+   - Footer navigation (legal, social, secondary pages)
 
-2. Content must be REALISTIC for the project description — NO lorem ipsum.
-   Write content in the project's primary language ({$langs}).
-   Make it sound like a real business website — professional copywriting.
+2. Content rules:
+   - ALL content must be REALISTIC for this business — NO lorem ipsum, NO placeholder text
+   - Write like a professional copywriter in {$langs}
+   - Headlines must be compelling and specific to this business
+   - FAQ questions must be ones a real customer would ask
+   - Testimonials must sound genuine (use realistic names for the country/culture)
 
-3. Run: php artisan migrate --force && php artisan db:seed --force
+3. IF E-COMMERCE: also seed categories, sample products with realistic names/prices/descriptions
 
-4. config/ai.php — AI configuration
+4. Run: php artisan migrate --force && php artisan db:seed --force
+
+5. config/ai.php — AI configuration file
+
+6. Create .env.example additions: document any new .env keys the project needs
+   (payment keys, API keys, etc.) — add them to .env.example with descriptive comments
 PROMPT,
             verify: function (): ?string {
                 $result = Console::execSilent(
@@ -660,6 +771,76 @@ PROMPT,
 
         // Step F: Run tests and fix failures
         $this->runAndFixTests();
+
+        // Step G: Generate developer handoff — SETUP.md with what the dev needs to do
+        $this->steps->runAi(
+            name: 'Generating setup instructions for developer',
+            prompt: <<<PROMPT
+FINAL STEP. Read the entire project you just built. Generate a SETUP.md file in the project root.
+
+This file is for the DEVELOPER (junior). It must tell them EXACTLY what they need to do
+to make this project fully operational. Be specific — include URLs, dashboard links, exact .env key names.
+
+PROJECT: {$desc}
+E-COMMERCE: {$shop}
+PAYMENT PROVIDERS: {$payments}
+COUNTRY: {$country}
+
+SETUP.md must include:
+
+1. QUICK START
+   - Commands to run (migrate, seed, serve)
+   - Default admin login credentials
+   - URLs (site, admin panel)
+
+2. ENVIRONMENT VARIABLES TO CONFIGURE
+   List EVERY .env variable that needs a real value. For each one:
+   - The exact key name (e.g., STRIPE_SECRET_KEY)
+   - What it is (e.g., "Your Stripe secret API key")
+   - WHERE to get it (e.g., "Go to https://dashboard.stripe.com/apikeys → Secret key")
+   - Whether it's required or optional
+   - Example test/sandbox value if available
+
+3. PAYMENT PROVIDER SETUP (if e-commerce)
+   For EACH payment provider ({$payments}):
+   - Step-by-step account setup instructions
+   - Where to get API keys / credentials
+   - Test/sandbox mode instructions (test card numbers, test credentials)
+   - Webhook URL to configure (the exact URL: https://yourdomain.com/webhooks/stripe etc.)
+   - What to do when going to production (switch keys, verify domain, etc.)
+
+4. EMAIL CONFIGURATION
+   - Which email provider to use (Mailtrap for dev, real SMTP for production)
+   - .env keys: MAIL_HOST, MAIL_PORT, MAIL_USERNAME, etc.
+
+5. MEDIA / STORAGE
+   - How Curator handles uploads
+   - Storage link command if needed (php artisan storage:link)
+   - Production: S3 configuration if scaling
+
+6. GOING TO PRODUCTION CHECKLIST
+   - [ ] Set APP_ENV=production, APP_DEBUG=false
+   - [ ] Configure real database (MySQL/PostgreSQL)
+   - [ ] Set up real email (not Mailtrap)
+   - [ ] Switch payment providers to live mode
+   - [ ] Set APP_URL to real domain
+   - [ ] Run: php artisan config:cache && route:cache && view:cache
+   - [ ] Set up SSL certificate
+   - [ ] Configure backups
+
+7. COMMON TASKS
+   - How to add a new page (admin panel)
+   - How to add a new block type (create blade view + add to BlockRegistry + add to PageResource builder)
+   - How to change the theme/colors
+   - How to add a new language
+
+Write in CLEAR, simple language. The developer is a junior — don't assume they know
+what a webhook is. Explain briefly when needed.
+PROMPT,
+            verify: fn (): ?string => is_file($this->fullPath . '/SETUP.md') ? null : 'SETUP.md not created',
+            skippable: true,
+            timeout: 300,
+        );
 
         return true;
     }

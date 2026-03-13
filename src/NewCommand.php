@@ -213,26 +213,37 @@ final class NewCommand
 
         // First AI question
         $initPrompt = <<<PROMPT
-You are a Tessera AI architect. You help a junior developer create a new project.
+You are a senior developer and AI architect at Tessera. A junior developer needs your help
+creating a new project. You must fully understand what they need before building anything.
 
 {$systemContext}
 
 {$stackContext}
 
-Your job is to ask SHORT questions (one at a time) to understand:
-1. What the client does and what kind of project they need
-2. Special requirements (languages, e-commerce, mobile app, API...)
-3. Expected scale (small business site, medium platform, high-traffic system)
-4. Whether they want a designed frontend (landing pages, styled theme) or just backend/API
-5. If they want frontend — ask about design preferences (colors, style, mood, reference sites)
+YOUR MINDSET:
+You are the senior. The junior knows their CLIENT's business, but not programming.
+Your job is to extract everything YOU need to build this project correctly.
+Think about: What models will I need? What pages? Will there be payments? Users? Media?
+
+You MUST cover ALL of these topics (one question per message):
+1. BUSINESS — What the client does. What problem are we solving? What's the main goal of the site/app?
+2. LANGUAGES — Which languages? This affects database structure, routing, UI.
+3. PAYMENTS — Listen carefully: if they mention products, shop, selling, booking, tickets, subscriptions
+   → this is e-commerce. You MUST ask: Which country? Which payment provider?
+   Don't assume Stripe — in Croatia they use CorvusPay/WSPay, in Austria Klarna/Mollie, etc.
+4. FRONTEND — Do they want a designed, polished frontend? What style? Colors? Mood?
+   Show them you care about design: "warm and earthy, or modern and bold?"
+5. SCALE — How many products/pages/users? This affects architecture decisions.
 
 RULES:
-- Ask ONE question at a time — short and friendly
-- Do NOT mention technical details (no "Laravel", "React", "Go" etc.)
-- Speak as if talking to someone who knows their business but not programming
-- Be warm and professional
+- Ask ONE question at a time — short, warm, professional
+- Do NOT mention technical terms (no "Laravel", "Livewire", "API", "migration")
+- Talk like a colleague who wants to build something great together
+- LISTEN for implicit signals: "restaurant with ordering" = e-commerce + menu + maybe delivery
+- If something is AMBIGUOUS, ask — never assume
+- If the junior says something vague like "a normal website", dig deeper: "What should visitors be able to DO on the site?"
 
-Ask your FIRST question now.
+Ask your FIRST question now — start with understanding the business.
 PROMPT;
 
         $response = $this->ai->execute($initPrompt, getcwd(), 60);
@@ -241,8 +252,9 @@ PROMPT;
         Console::line($aiQuestion);
         Console::line();
 
-        // Conversation loop
-        $maxRounds = 5;
+        // Conversation loop — must cover all mandatory topics
+        $maxRounds = 8;
+        $minRounds = 3; // At least 3 Q&A before AI can finish
 
         for ($i = 0; $i < $maxRounds; $i++) {
             $answer = Console::ask('');
@@ -260,16 +272,51 @@ PROMPT;
             }
 
             $historyText = $this->formatConversation($conversation);
+            $roundNum = $i + 1;
 
             $followUpPrompt = <<<PROMPT
-You are a Tessera AI architect. You're talking with a junior about a new project.
+You are a senior developer talking with a junior about a new project.
 
 CONVERSATION SO FAR:
 {$historyText}
 
-If you have ENOUGH information to choose a technology and plan, respond EXACTLY: ENOUGH_INFO
-If you need more, ask ONE short question.
-Be efficient — don't ask more than necessary.
+THINK STEP BY STEP — what do you still need to know to build this project?
+
+MANDATORY CHECKLIST (mark each as COVERED or NOT COVERED):
+1. BUSINESS — what the client does, main goal of the site [covered?]
+2. LANGUAGES — which languages the site/app needs [covered?]
+3. PAYMENTS — if ANY of these signals appeared: products, shop, selling, booking,
+   tickets, reservations with payment, subscriptions, pricing → you MUST ask about payments.
+   Country matters for payment providers:
+   - Croatia/Slovenia/Serbia: CorvusPay, WSPay, or Stripe
+   - Austria/Germany/Switzerland: Klarna, Mollie, Stripe, PayPal
+   - UK: Stripe, GoCardless, PayPal
+   - USA: Stripe, Square, PayPal
+   - Other: ask about local providers or suggest Stripe as default
+   [covered? or not applicable?]
+4. FRONTEND — design preferences: style, colors, mood [covered?]
+5. SCALE — expected size: products, pages, daily visitors [covered?]
+
+ALSO THINK ABOUT (ask if relevant to this project):
+- User accounts? (login, registration, profiles)
+- Media uploads? (gallery, portfolio, product photos)
+- Contact forms? Email notifications?
+- Blog or news section?
+- Social media integration?
+- Multilingual content (not just UI — actual content in multiple languages)?
+- Any integrations? (Google Maps, calendar, external APIs)
+
+CURRENT ROUND: {$roundNum} of {$maxRounds}
+
+RULES:
+- If ALL 5 mandatory topics are covered (or confirmed not applicable) → respond EXACTLY: ENOUGH_INFO
+- If any mandatory topic is NOT yet covered → ask about it (ONE question, short and friendly)
+- You MUST ask about uncovered mandatory topics before saying ENOUGH_INFO
+- Do NOT say ENOUGH_INFO before round {$minRounds}
+- If the project clearly involves selling/payments but no provider was discussed → you MUST ask
+- If you notice something the junior might not have thought of, mention it briefly:
+  "By the way, should the site also have a blog section?" — this is what a senior dev does
+- NEVER use technical terms — keep it business-level
 PROMPT;
 
             $response = $this->ai->execute($followUpPrompt, getcwd(), 60);
@@ -294,6 +341,7 @@ From this conversation, extract project requirements. Respond with ONLY valid JS
 
 {
     "description": "short project description",
+    "country": "HR",
     "languages": ["hr"],
     "needs_shop": false,
     "needs_mobile": false,
@@ -301,9 +349,20 @@ From this conversation, extract project requirements. Respond with ONLY valid JS
     "needs_frontend": true,
     "design_style": "modern, clean, professional",
     "design_colors": "brand colors or preferences if mentioned",
+    "payment_providers": [],
     "expected_users": "low",
     "special": ""
 }
+
+IMPORTANT for payment_providers:
+- Use exact provider names: "stripe", "corvuspay", "wspay", "klarna", "mollie", "paypal", "square", "gocardless", "bank_transfer"
+- If e-commerce but no specific provider mentioned, suggest based on country:
+  HR/SI/RS → ["corvuspay", "bank_transfer"]
+  AT/DE/CH → ["stripe", "klarna"]
+  UK → ["stripe", "paypal"]
+  US → ["stripe", "paypal"]
+  Other → ["stripe", "bank_transfer"]
+- If not e-commerce, leave empty []
 
 CONVERSATION:
 {$historyText}
@@ -326,10 +385,15 @@ PROMPT;
 
         return [
             'description' => $rawDescription,
+            'country' => '',
             'languages' => ['hr'],
             'needs_shop' => false,
             'needs_mobile' => false,
             'needs_realtime' => false,
+            'needs_frontend' => true,
+            'design_style' => 'modern, clean',
+            'design_colors' => '',
+            'payment_providers' => [],
             'expected_users' => 'low',
             'conversation' => $conversation,
         ];
@@ -346,6 +410,8 @@ PROMPT;
         $realtime = ($requirements['needs_realtime'] ?? false) ? 'YES' : 'NO';
         $users = $requirements['expected_users'] ?? 'low';
         $shop = ($requirements['needs_shop'] ?? false) ? 'YES' : 'NO';
+        $paymentProviders = $requirements['payment_providers'] ?? [];
+        $payments = ! empty($paymentProviders) ? implode(', ', $paymentProviders) : 'none';
         $special = $requirements['special'] ?? '';
 
         Console::spinner('AI is choosing technology...');
@@ -359,6 +425,7 @@ REQUIREMENTS:
 - Real-time: {$realtime}
 - Expected users: {$users}
 - E-commerce: {$shop}
+- Payment providers: {$payments}
 - Special: {$special}
 
 {$stackContext}
@@ -493,6 +560,15 @@ PROMPT;
         }
 
         Console::line();
+
+        // Check if SETUP.md was generated
+        $setupPath = $this->fullPath . '/SETUP.md';
+        if (is_file($setupPath)) {
+            Console::bold('  IMPORTANT: Read SETUP.md for configuration steps!');
+            Console::line('  It contains API keys, payment setup, and production checklist.');
+            Console::line();
+        }
+
         Console::line('  For further changes:');
         Console::line('    tessera "what you need"');
         Console::line();
@@ -521,6 +597,7 @@ PROMPT;
 
         return [
             'description' => $json['description'] ?? 'Web project',
+            'country' => $json['country'] ?? '',
             'languages' => $json['languages'] ?? ['hr'],
             'needs_shop' => (bool) ($json['needs_shop'] ?? false),
             'needs_mobile' => (bool) ($json['needs_mobile'] ?? false),
@@ -528,6 +605,7 @@ PROMPT;
             'needs_frontend' => (bool) ($json['needs_frontend'] ?? true),
             'design_style' => $json['design_style'] ?? 'modern, clean',
             'design_colors' => $json['design_colors'] ?? '',
+            'payment_providers' => $json['payment_providers'] ?? [],
             'expected_users' => $json['expected_users'] ?? 'low',
             'special' => $json['special'] ?? '',
             'conversation' => $conversation,
