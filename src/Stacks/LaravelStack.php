@@ -83,13 +83,10 @@ final class LaravelStack implements StackInterface
             return false;
         }
 
-        // Step 2: Install core packages
-        if (! $this->installCorePackages()) {
+        // Step 2: Install all packages (core + dev in one pass to avoid repeated autoload)
+        if (! $this->installAllPackages()) {
             return false;
         }
-
-        // Step 3: Install dev packages
-        $this->installDevPackages();
 
         // Step 4: Filament setup
         if (! $this->setupFilament()) {
@@ -157,7 +154,7 @@ final class LaravelStack implements StackInterface
     // Private step methods
     // -------------------------------------------------------------------------
 
-    private function installCorePackages(): bool
+    private function installAllPackages(): bool
     {
         $packages = [
             'filament/filament',
@@ -180,16 +177,38 @@ final class LaravelStack implements StackInterface
             $packages[] = 'maatwebsite/excel';
         }
 
-        return $this->steps->installPackages('Install core packages', $packages);
-    }
+        // Install all core + dev packages in one composer call (single autoload generation)
+        $devPackages = ['laravel/boost', 'laravel/pint', 'laravel/telescope', 'larastan/larastan'];
 
-    private function installDevPackages(): bool
-    {
-        return $this->steps->installPackages(
-            'Install dev tools',
-            ['laravel/boost', 'laravel/pint', 'laravel/telescope', 'larastan/larastan'],
-            dev: true,
+        $allPackages = implode(' ', $packages);
+        $allDevPackages = implode(' ', $devPackages);
+
+        Console::line();
+        Console::spinner('Install packages');
+
+        // Try core + dev in two fast calls
+        $coreExit = Console::exec(
+            "composer require {$allPackages} --no-interaction --no-autoloader",
+            $this->fullPath,
         );
+
+        $devExit = Console::exec(
+            "composer require --dev {$allDevPackages} --no-interaction --no-autoloader",
+            $this->fullPath,
+        );
+
+        if ($coreExit === 0) {
+            // Generate autoload once
+            Console::spinner('Generating autoload...');
+            Console::exec('composer dump-autoload', $this->fullPath);
+            Console::success('Install packages');
+
+            return true;
+        }
+
+        // Bulk failed — fall back to StepRunner for individual installs with retry
+        return $this->steps->installPackages('Install core packages', $packages)
+            && $this->steps->installPackages('Install dev tools', $devPackages, dev: true);
     }
 
     private function setupFilament(): bool
