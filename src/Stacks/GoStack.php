@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Tessera\Installer\Stacks;
 
-use Tessera\Installer\AiTool;
+use Tessera\Installer\Complexity;
 use Tessera\Installer\Console;
 use Tessera\Installer\Memory;
 use Tessera\Installer\StepRunner;
 use Tessera\Installer\SystemInfo;
+use Tessera\Installer\ToolRouter;
 
 /**
  * Go stack for high-performance backends.
@@ -50,10 +51,10 @@ final class GoStack implements StackInterface
         return ['ready' => empty($missing), 'missing' => $missing];
     }
 
-    public function scaffold(string $directory, array $requirements, AiTool $ai, SystemInfo $system, Memory $memory): bool
+    public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool
     {
         $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
-        $this->steps = new StepRunner($ai, $this->fullPath);
+        $this->steps = new StepRunner($router, $this->fullPath);
 
         $desc = $requirements['description'] ?? 'Go backend';
         $langs = implode(', ', $requirements['languages'] ?? ['en']);
@@ -95,6 +96,7 @@ final class GoStack implements StackInterface
         $memory->startStep('scaffold');
         $this->steps->runAi(
             name: '[1/4] Creating project structure',
+            complexity: Complexity::COMPLEX,
             prompt: <<<PROMPT
 You are a SENIOR Go developer building a production-grade project from scratch.
 Think carefully about what THIS specific project needs before writing any code.
@@ -175,6 +177,7 @@ PROMPT,
         $memory->startStep('tests');
         $this->steps->runAi(
             name: '[2/4] Generating tests',
+            complexity: Complexity::MEDIUM,
             prompt: <<<PROMPT
 Create Go tests for this project. Read the project structure first.
 
@@ -202,6 +205,7 @@ PROMPT,
         $memory->startStep('tests_fixed');
         $this->steps->runAi(
             name: '[3/4] Running and fixing tests',
+            complexity: Complexity::MEDIUM,
             prompt: <<<PROMPT
 Run the project tests with: go test ./...
 If any tests fail, analyze the output and fix either the test or the code.
@@ -221,6 +225,7 @@ PROMPT,
         $memory->startStep('setup_md');
         $this->steps->runAi(
             name: '[4/4] Generating setup instructions',
+            complexity: Complexity::SIMPLE,
             prompt: <<<PROMPT
 Read the entire project you just built. Generate a SETUP.md file in the project root.
 

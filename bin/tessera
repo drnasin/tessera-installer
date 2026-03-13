@@ -39,9 +39,13 @@ if (! $loaded) {
     $src = dirname(__DIR__) . '/src';
     require $src . '/AiResponse.php';
     require $src . '/AiTool.php';
+    require $src . '/Complexity.php';
+    require $src . '/ToolSelection.php';
+    require $src . '/ToolRouter.php';
     require $src . '/Console.php';
     require $src . '/SystemInfo.php';
     require $src . '/Memory.php';
+    require $src . '/StepRunner.php';
     require $src . '/NewCommand.php';
 }
 
@@ -49,6 +53,7 @@ use Tessera\Installer\AiTool;
 use Tessera\Installer\Console;
 use Tessera\Installer\NewCommand;
 use Tessera\Installer\SystemInfo;
+use Tessera\Installer\ToolRouter;
 
 // ─── Parse arguments ───
 
@@ -58,7 +63,7 @@ $command = $args[0] ?? null;
 // ─── Version ───
 
 if ($command === '--version' || $command === '-v') {
-    Console::line('Tessera Installer v2.2.0');
+    Console::line('Tessera Installer v2.3.0');
     exit(0);
 }
 
@@ -159,6 +164,13 @@ function showTools(): void
     }
 
     Console::line();
+
+    $router = ToolRouter::detect();
+    if ($router !== null) {
+        Console::bold('Intelligent routing:');
+        Console::line($router->describe());
+        Console::line();
+    }
 }
 
 function showDoctor(): void

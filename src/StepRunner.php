@@ -16,7 +16,7 @@ namespace Tessera\Installer;
  */
 final class StepRunner
 {
-    private AiTool $ai;
+    private ToolRouter $router;
 
     private string $workingDir;
 
@@ -25,9 +25,9 @@ final class StepRunner
     /** @var array<string, string> */
     private array $log = [];
 
-    public function __construct(AiTool $ai, string $workingDir, int $maxRetries = 2)
+    public function __construct(ToolRouter $router, string $workingDir, int $maxRetries = 2)
     {
-        $this->ai = $ai;
+        $this->router = $router;
         $this->workingDir = $workingDir;
         $this->maxRetries = $maxRetries;
     }
@@ -171,7 +171,8 @@ final class StepRunner
                 . "Fix the issue and install the package. Working directory: {$this->workingDir}\n"
                 . "If the package doesn't exist or is incompatible, find an alternative or skip it.";
 
-            $response = $this->ai->execute($fixPrompt, $this->workingDir, 120);
+            $selection = $this->router->resolve(Complexity::SIMPLE);
+            $response = $selection->tool->execute($fixPrompt, $this->workingDir, 120, $selection->model);
 
             if ($response->success) {
                 // Verify it's installed now
@@ -221,12 +222,14 @@ final class StepRunner
         ?callable $verify = null,
         bool $skippable = false,
         int $timeout = 300,
+        Complexity $complexity = Complexity::MEDIUM,
     ): bool {
         return $this->run(
             name: $name,
-            execute: function () use ($name, $prompt, $timeout): bool {
+            execute: function () use ($name, $prompt, $timeout, $complexity): bool {
+                $selection = $this->router->resolve($complexity);
                 $startTime = time();
-                $response = $this->ai->execute($prompt, $this->workingDir, $timeout);
+                $response = $selection->tool->execute($prompt, $this->workingDir, $timeout, $selection->model);
                 $elapsed = time() - $startTime;
                 $elapsedMin = round($elapsed / 60, 1);
 
@@ -333,7 +336,9 @@ final class StepRunner
             $prompt .= "Hint: {$hint}\n";
         }
 
-        $response = $this->ai->execute($prompt, $this->workingDir, 120);
+        // Fixes are straightforward — use a fast model
+        $selection = $this->router->resolve(Complexity::SIMPLE);
+        $response = $selection->tool->execute($prompt, $this->workingDir, 120, $selection->model);
 
         return $response->success;
     }

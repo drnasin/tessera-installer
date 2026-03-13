@@ -11,7 +11,7 @@ use Tessera\Installer\Stacks\StackRegistry;
  * `tessera new {directory}` — AI-powered project scaffolding.
  *
  * Flow:
- * 1. Detect AI tool + available stacks
+ * 1. Detect AI tools + available stacks
  * 2. AI-driven conversation with junior dev
  * 3. AI decides technology stack + architecture
  * 4. Stack driver handles everything else
@@ -22,7 +22,7 @@ final class NewCommand
 
     private string $fullPath;
 
-    private AiTool $ai;
+    private ToolRouter $router;
 
     private SystemInfo $system;
 
@@ -79,10 +79,10 @@ final class NewCommand
 
     private function preflight(): bool
     {
-        // Check AI tool
-        $this->ai = AiTool::detect();
+        // Check AI tools
+        $this->router = ToolRouter::detect();
 
-        if ($this->ai === null) {
+        if ($this->router === null) {
             Console::error('No AI tool found!');
             Console::line('Install at least one:');
             Console::line('  - claude: https://docs.anthropic.com/en/docs/claude-code');
@@ -92,8 +92,14 @@ final class NewCommand
             return false;
         }
 
-        Console::success("AI: {$this->ai->name()}");
+        $toolNames = implode(', ', $this->router->availableNames());
+        Console::success("AI: {$toolNames}");
         Console::success("OS: {$this->system->os()} ({$this->system->packageManager()})");
+
+        // Show intelligent routing
+        Console::line();
+        Console::bold('AI routing:');
+        Console::line($this->router->describe());
 
         // Show available stacks
         $available = StackRegistry::available();
@@ -253,7 +259,7 @@ final class NewCommand
         $this->memory = new Memory($this->fullPath);
 
         // Scaffold (stack calls memory->init() AFTER creating the project directory)
-        if (! $stack->scaffold($this->directory, $requirements, $this->ai, $this->system, $this->memory)) {
+        if (! $stack->scaffold($this->directory, $requirements, $this->router, $this->system, $this->memory)) {
             // Save state on failure — don't delete, allow resume
             $this->memory?->fail('Scaffold failed — run tessera new again to resume');
 
@@ -328,7 +334,7 @@ RULES:
 Ask your FIRST question now — start with understanding the business.
 PROMPT;
 
-        $response = $this->ai->execute($initPrompt, getcwd(), 60);
+        $response = $this->router->primary()->execute($initPrompt, getcwd(), 60);
         $aiQuestion = $response->success ? $response->output : 'Tell me about the project — what does the client do?';
 
         Console::line($aiQuestion);
@@ -401,7 +407,7 @@ RULES:
 - NEVER use technical terms — keep it business-level
 PROMPT;
 
-            $response = $this->ai->execute($followUpPrompt, getcwd(), 60);
+            $response = $this->router->primary()->execute($followUpPrompt, getcwd(), 60);
 
             if (! $response->success || str_contains($response->output, 'ENOUGH_INFO')) {
                 break;
@@ -450,7 +456,7 @@ CONVERSATION:
 {$historyText}
 PROMPT;
 
-        $response = $this->ai->execute($extractPrompt, getcwd(), 60);
+        $response = $this->router->primary()->execute($extractPrompt, getcwd(), 60);
 
         if ($response->success) {
             $parsed = $this->parseJsonRequirements($response->output, $conversation);
@@ -524,7 +530,7 @@ Respond with ONLY valid JSON (no markdown):
 {"stack": "laravel", "reason": "one line why"}
 PROMPT;
 
-        $response = $this->ai->execute($prompt, getcwd(), 60);
+        $response = $this->router->primary()->execute($prompt, getcwd(), 60);
 
         if (! $response->success) {
             Console::warn('AI could not decide. Using Laravel as default.');
@@ -596,7 +602,7 @@ INSTRUCTIONS:
 7. If one tool fails, continue with the others
 PROMPT;
 
-        $response = $this->ai->execute($prompt, getcwd(), 300);
+        $response = $this->router->primary()->execute($prompt, getcwd(), 300);
 
         if ($response->success) {
             Console::success('Dependency installation complete');

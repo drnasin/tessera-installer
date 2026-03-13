@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Tessera\Installer\Stacks;
 
-use Tessera\Installer\AiTool;
 use Tessera\Installer\Memory;
 use Tessera\Installer\SystemInfo;
+use Tessera\Installer\ToolRouter;
 
 /**
  * Each technology stack implements this interface.
@@ -39,7 +39,7 @@ interface StackInterface
     /**
      * Create the project scaffold.
      */
-    public function scaffold(string $directory, array $requirements, AiTool $ai, SystemInfo $system, Memory $memory): bool;
+    public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool;
 
     /**
      * Run post-scaffold setup (migrations, build, etc.)

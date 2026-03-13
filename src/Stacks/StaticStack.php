@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Tessera\Installer\Stacks;
 
-use Tessera\Installer\AiTool;
+use Tessera\Installer\Complexity;
 use Tessera\Installer\Console;
 use Tessera\Installer\Memory;
 use Tessera\Installer\StepRunner;
 use Tessera\Installer\SystemInfo;
+use Tessera\Installer\ToolRouter;
 
 /**
  * Static site (HTML + Tailwind + Alpine.js).
@@ -51,10 +52,10 @@ final class StaticStack implements StackInterface
         return ['ready' => empty($missing), 'missing' => $missing];
     }
 
-    public function scaffold(string $directory, array $requirements, AiTool $ai, SystemInfo $system, Memory $memory): bool
+    public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool
     {
         $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
-        $this->steps = new StepRunner($ai, $this->fullPath);
+        $this->steps = new StepRunner($router, $this->fullPath);
 
         $desc = $requirements['description'] ?? 'Landing page';
         $designStyle = $requirements['design_style'] ?? 'modern, clean';
@@ -155,6 +156,7 @@ PROMPT,
                 return 'No index.html or package.json created';
             },
             timeout: 300,
+            complexity: Complexity::COMPLEX,
         );
         $memory->completeStep('scaffold');
         } // end if !isStepDone('scaffold')
@@ -183,6 +185,7 @@ PROMPT,
             verify: null,
             skippable: true,
             timeout: 120,
+            complexity: Complexity::MEDIUM,
         );
         $memory->completeStep('polish');
         } // end if !isStepDone('polish')
@@ -228,6 +231,7 @@ PROMPT,
             verify: fn (): ?string => is_file($this->fullPath . '/SETUP.md') ? null : 'SETUP.md not created',
             skippable: true,
             timeout: 120,
+            complexity: Complexity::SIMPLE,
         );
         $memory->completeStep('setup_md');
         } // end if !isStepDone('setup_md')

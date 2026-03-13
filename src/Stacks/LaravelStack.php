@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Tessera\Installer\Stacks;
 
-use Tessera\Installer\AiTool;
+use Tessera\Installer\Complexity;
 use Tessera\Installer\Console;
 use Tessera\Installer\Memory;
 use Tessera\Installer\StepRunner;
 use Tessera\Installer\SystemInfo;
+use Tessera\Installer\ToolRouter;
 
 /**
  * Full Laravel + Filament + Tessera stack.
@@ -25,7 +26,7 @@ final class LaravelStack implements StackInterface
 
     private string $fullPath;
 
-    private AiTool $ai;
+    private ToolRouter $router;
 
     private SystemInfo $system;
 
@@ -69,14 +70,14 @@ final class LaravelStack implements StackInterface
         return ['ready' => empty($missing), 'missing' => $missing];
     }
 
-    public function scaffold(string $directory, array $requirements, AiTool $ai, SystemInfo $system, Memory $memory): bool
+    public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool
     {
         $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
-        $this->ai = $ai;
+        $this->router = $router;
         $this->system = $system;
         $this->memory = $memory;
         $this->requirements = $requirements;
-        $this->steps = new StepRunner($ai, $this->fullPath);
+        $this->steps = new StepRunner($router, $this->fullPath);
 
         // Check if we're resuming a previous install
         $resuming = is_file($this->fullPath . '/artisan');
@@ -92,7 +93,7 @@ final class LaravelStack implements StackInterface
 
         // Step 1: Create Laravel project (skip if resuming — artisan already exists)
         if (! $resuming) {
-            $parentRunner = new StepRunner($ai, getcwd());
+            $parentRunner = new StepRunner($router, getcwd());
             $result = $parentRunner->runCommand(
                 name: '[1/8] Create Laravel project',
                 command: "composer create-project laravel/laravel {$directory} --prefer-dist --no-interaction",
@@ -308,6 +309,7 @@ final class LaravelStack implements StackInterface
         // Create admin user via AI
         $this->steps->runAi(
             name: 'Create admin user',
+            complexity: Complexity::SIMPLE,
             prompt: <<<'PROMPT'
 Create a Filament admin user with these credentials:
 - Name: Admin
@@ -333,6 +335,7 @@ PROMPT,
         // Configure CuratorPlugin in AdminPanelProvider via AI
         $this->steps->runAi(
             name: 'Configure Filament plugins',
+            complexity: Complexity::SIMPLE,
             prompt: <<<'PROMPT'
 In app/Providers/Filament/AdminPanelProvider.php, add CuratorPlugin to the panel.
 
@@ -477,6 +480,7 @@ PROMPT,
         $this->memory->startStep('core_models');
         $this->steps->runAi(
             name: 'Creating database models and services',
+            complexity: Complexity::COMPLEX,
             prompt: <<<PROMPT
 You are a SENIOR Laravel developer building a Tessera CMS project from scratch.
 Think carefully about what THIS specific project needs before writing any code.
@@ -567,6 +571,7 @@ PROMPT,
         $this->memory->startStep('theme');
         $this->steps->runAi(
             name: 'Designing frontend theme and pages',
+            complexity: Complexity::COMPLEX,
             prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Core models and services are already created.
 Read the Block model and BlockRegistry to understand the data flow.
@@ -648,6 +653,7 @@ PROMPT,
         $this->memory->startStep('admin');
         $this->steps->runAi(
             name: 'Building admin panel',
+            complexity: Complexity::COMPLEX,
             prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Models, theme, and block views are already created.
 
@@ -718,6 +724,7 @@ PROMPT,
         $this->memory->startStep('content');
         $this->steps->runAi(
             name: 'Writing content and seeding data',
+            complexity: Complexity::MEDIUM,
             prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Models, views, admin, and block views are all set up.
 
@@ -781,6 +788,7 @@ PROMPT,
         $this->memory->startStep('tests');
         $this->steps->runAi(
             name: 'AI: Generate tests',
+            complexity: Complexity::MEDIUM,
             prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Models, views, admin, and content are all created.
 
@@ -847,6 +855,7 @@ PROMPT,
         $this->memory->startStep('setup_md');
         $this->steps->runAi(
             name: 'Generating setup instructions for developer',
+            complexity: Complexity::SIMPLE,
             prompt: <<<PROMPT
 FINAL STEP. Read the entire project you just built. Generate a SETUP.md file in the project root.
 
@@ -963,6 +972,7 @@ PROMPT,
 
             $this->steps->runAi(
                 name: 'AI: Fix failing tests',
+                complexity: Complexity::MEDIUM,
                 prompt: <<<PROMPT
 The project tests are failing. Here is the test output:
 

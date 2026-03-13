@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Tessera\Installer\Stacks;
 
-use Tessera\Installer\AiTool;
+use Tessera\Installer\Complexity;
 use Tessera\Installer\Console;
 use Tessera\Installer\Memory;
 use Tessera\Installer\StepRunner;
 use Tessera\Installer\SystemInfo;
+use Tessera\Installer\ToolRouter;
 
 /**
  * Flutter / Dart stack for mobile and web apps.
@@ -55,10 +56,10 @@ final class FlutterStack implements StackInterface
         return ['ready' => empty($missing), 'missing' => $missing];
     }
 
-    public function scaffold(string $directory, array $requirements, AiTool $ai, SystemInfo $system, Memory $memory): bool
+    public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool
     {
         $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
-        $this->steps = new StepRunner($ai, $this->fullPath);
+        $this->steps = new StepRunner($router, $this->fullPath);
 
         // NOTE: memory->init() is called AFTER flutter create
         // because flutter create requires an empty/non-existent directory
@@ -87,7 +88,7 @@ final class FlutterStack implements StackInterface
 
         // Step 1: Create Flutter project (skip if resuming)
         if (! $resuming) {
-            $parentRunner = new StepRunner($ai, getcwd());
+            $parentRunner = new StepRunner($router, getcwd());
             $result = $parentRunner->runCommand(
                 name: '[1/5] Create Flutter project',
                 command: "flutter create {$directory} --org com.tessera --no-pub",
@@ -196,6 +197,7 @@ PROMPT,
             verify: null,
             skippable: true,
             timeout: 600,
+            complexity: Complexity::COMPLEX,
         );
         $memory->completeStep('scaffold');
         } // end if !isStepDone('scaffold')
@@ -221,6 +223,7 @@ PROMPT,
             verify: null,
             skippable: true,
             timeout: 300,
+            complexity: Complexity::MEDIUM,
         );
         $memory->completeStep('tests');
         } // end if !isStepDone('tests')
@@ -240,6 +243,7 @@ PROMPT,
             verify: null,
             skippable: true,
             timeout: 300,
+            complexity: Complexity::MEDIUM,
         );
         $memory->completeStep('tests_fixed');
         } // end if !isStepDone('tests_fixed')
@@ -286,6 +290,7 @@ PROMPT,
             verify: fn (): ?string => is_file($this->fullPath . '/SETUP.md') ? null : 'SETUP.md not created',
             skippable: true,
             timeout: 300,
+            complexity: Complexity::SIMPLE,
         );
         $memory->completeStep('setup_md');
         } // end if !isStepDone('setup_md')

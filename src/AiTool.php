@@ -61,7 +61,7 @@ final class AiTool
     }
 
     /**
-     * Detect all available tools.
+     * Detect all available tools (info only — for display).
      *
      * @return array<string, array{name: string, version: string}>
      */
@@ -74,6 +74,26 @@ final class AiTool
 
             if ($version !== null) {
                 $available[$name] = ['name' => $name, 'version' => $version];
+            }
+        }
+
+        return $available;
+    }
+
+    /**
+     * Detect all available tools as executable instances.
+     *
+     * @return array<string, self>
+     */
+    public static function detectAllInstances(): array
+    {
+        $available = [];
+
+        foreach (self::TOOLS as $name => $config) {
+            $version = self::checkAvailable($config['detect']);
+
+            if ($version !== null) {
+                $available[$name] = new self($name, $config, $version);
             }
         }
 
@@ -93,9 +113,15 @@ final class AiTool
     /**
      * Execute a prompt and return the output.
      */
-    public function execute(string $prompt, string $workingDir, int $timeout = 600): AiResponse
+    public function execute(string $prompt, string $workingDir, int $timeout = 600, ?string $model = null): AiResponse
     {
         $command = $this->config['execute'];
+
+        // Insert --model flag if specified (claude and gemini support this)
+        if ($model !== null && in_array($this->name, ['claude', 'gemini'], true)) {
+            // Insert after the binary name (position 1 for claude, position 1 for gemini)
+            array_splice($command, 1, 0, ['--model', $model]);
+        }
 
         // For tools that don't support stdin, append prompt as argument
         if (! $this->config['stdin']) {

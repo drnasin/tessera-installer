@@ -187,6 +187,31 @@ AI detects your operating system, package managers, and installed tools. Every A
 ### Auto-Install Dependencies
 If the chosen stack needs a tool you don't have (e.g., Node.js for frontend assets), AI offers to install it automatically using the right package manager for your OS.
 
+### Intelligent AI Routing
+When multiple AI tools are installed, Tessera routes each task to the optimal tool and model based on complexity:
+
+| Complexity | Claude | Gemini | Use cases |
+|---|---|---|---|
+| **Simple** | Haiku 4.5 | Flash 2.0 | SETUP.md, config, admin user |
+| **Medium** | Sonnet 4 | Pro 2.5 | Content, tests, fixes |
+| **Complex** | Opus 4 | Pro 2.5 | Core architecture, models, theme |
+
+This saves tokens and money — SETUP.md doesn't need Opus, but building the database schema does.
+
+```
+$ tessera tools
+
+Available AI tools:
+✓ claude: 2.1.75
+✓ gemini: 0.32.1
+✓ codex: 0.98.0
+
+Intelligent routing:
+  simple: claude (claude-haiku-4-5-20251001)
+  medium: claude (claude-sonnet-4-20250514)
+  complex: claude (claude-opus-4-20250514)
+```
+
 ### Self-Healing Tests
 After building the project, AI generates tests and runs them. If any test fails, AI analyzes the output and fixes the issue — either in the test or in the code. Up to 3 attempts.
 
@@ -263,7 +288,7 @@ tessera new my-shop
 
 ### `tessera tools` — "Which AI tools do I have?"
 
-Shows which AI CLI tools (Claude, Codex, Gemini) are installed. The first one found is used for scaffolding.
+Shows which AI CLI tools (Claude, Codex, Gemini) are installed, and how tasks are routed based on complexity (which model handles simple vs. complex tasks).
 
 ```bash
 tessera tools
@@ -272,6 +297,7 @@ tessera tools
 **When to use:**
 - If you're not sure which AI tool Tessera will use
 - After installing a new AI tool, to verify it's detected
+- To see the intelligent routing configuration
 
 ### `tessera --version`
 
