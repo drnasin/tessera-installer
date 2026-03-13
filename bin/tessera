@@ -58,7 +58,7 @@ $command = $args[0] ?? null;
 // ─── Version ───
 
 if ($command === '--version' || $command === '-v') {
-    Console::line('Tessera Installer v1.3.0');
+    Console::line('Tessera Installer v2.0.0');
     exit(0);
 }
 
