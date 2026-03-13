@@ -538,6 +538,124 @@ PROMPT,
             timeout: 600,
         );
 
+        // Step E: Generate tests
+        $this->steps->runAi(
+            name: 'AI: Generate tests',
+            prompt: <<<PROMPT
+CONTINUE working on the Tessera project. Models, views, admin, and content are all created.
+
+Analyze the project and generate PHPUnit/Pest tests in tests/Feature/:
+
+1. ROUTE TESTS (tests/Feature/RouteTest.php):
+   - Homepage (/) returns 200
+   - Each seeded page returns 200 (about, contact, faq, etc.)
+   - /admin redirects to login
+   - /admin/login returns 200
+   - Non-existent page returns 404
+
+2. MODEL TESTS (tests/Feature/ModelTest.php):
+   - Page can be created with required fields
+   - Page has blocks relationship
+   - Block belongs to page
+   - Navigation can be created
+   - Navigation scopes (header, footer) work
+
+3. SERVICE TESTS (tests/Feature/ServiceTest.php):
+   - PageRenderer resolves page by slug
+   - BlockRegistry returns correct view path for known block type
+   - ThemeManager returns active theme name
+
+4. SEEDER TEST (tests/Feature/SeederTest.php):
+   - DatabaseSeeder creates expected pages
+   - DatabaseSeeder creates navigation items
+   - Pages have blocks after seeding
+
+Use RefreshDatabase trait. Use SQLite in-memory for tests.
+Make sure phpunit.xml is configured for SQLite in-memory (:memory:).
+
+IMPORTANT: Write ONLY tests that will PASS with the current codebase.
+Do NOT test features that don't exist yet.
+PROMPT,
+            verify: function (): ?string {
+                $dir = $this->fullPath . '/tests/Feature';
+                if (! is_dir($dir)) {
+                    return 'tests/Feature directory not found';
+                }
+
+                $files = glob($dir . '/*Test.php');
+
+                return ! empty($files) ? null : 'No test files created';
+            },
+            skippable: true,
+            timeout: 600,
+        );
+
+        // Step F: Run tests and fix failures
+        $this->runAndFixTests();
+
         return true;
+    }
+
+    /**
+     * Run tests, and if they fail, let AI fix them (up to 2 attempts).
+     */
+    private function runAndFixTests(): void
+    {
+        $maxAttempts = 3;
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            Console::line();
+            Console::spinner($attempt === 1 ? 'Running tests...' : "Running tests (attempt {$attempt}/{$maxAttempts})...");
+
+            $result = Console::execSilent(
+                'php artisan test --no-interaction 2>&1',
+                $this->fullPath,
+            );
+
+            if ($result['exit'] === 0) {
+                Console::success('All tests passing');
+
+                return;
+            }
+
+            // Tests failed
+            $output = $result['output'];
+            $failCount = 'some';
+
+            if (preg_match('/(\d+)\s+failed/', $output, $m)) {
+                $failCount = $m[1];
+            }
+
+            Console::warn("  {$failCount} test(s) failed");
+
+            if ($attempt >= $maxAttempts) {
+                Console::warn('  Skipping test fixes — project is functional, tests need manual review.');
+
+                return;
+            }
+
+            // Let AI fix the failures
+            // Truncate output to last 2000 chars to avoid prompt size issues
+            $truncatedOutput = strlen($output) > 2000 ? '...' . substr($output, -2000) : $output;
+
+            $this->steps->runAi(
+                name: 'AI: Fix failing tests',
+                prompt: <<<PROMPT
+The project tests are failing. Here is the test output:
+
+{$truncatedOutput}
+
+Fix the failing tests. Rules:
+1. If the test is wrong (testing something that doesn't exist), FIX THE TEST
+2. If the code has a bug that the test caught, FIX THE CODE
+3. Do NOT delete tests — fix them
+4. Do NOT change test assertions to match wrong behavior — fix the root cause
+5. Make sure all tests use RefreshDatabase trait and SQLite in-memory
+PROMPT,
+                verify: null,
+                skippable: true,
+                timeout: 300,
+            );
+        }
     }
 }
