@@ -13,7 +13,7 @@ final class AiTool
         'claude' => [
             'binary' => 'claude',
             'detect' => 'claude --version',
-            'execute' => ['claude', '-p', '--output-format', 'text', '--verbose'],
+            'execute' => ['claude', '-p', '--dangerously-skip-permissions', '--output-format', 'text', '--verbose'],
             'stdin' => true,
         ],
         'gemini' => [
