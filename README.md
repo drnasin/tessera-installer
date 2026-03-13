@@ -190,8 +190,28 @@ If the chosen stack needs a tool you don't have (e.g., Node.js for frontend asse
 ### Self-Healing Tests
 After building the project, AI generates tests and runs them. If any test fails, AI analyzes the output and fixes the issue — either in the test or in the code. Up to 3 attempts.
 
-### Project Memory
-AI maintains state in `.tessera/state.json` — tracking completed steps, decisions, and notes. If something fails, AI knows exactly where it stopped and what was already done.
+### Project Memory & Resume
+AI maintains state in `.tessera/state.json` — tracking completed steps, decisions, and notes. If a build fails or times out, progress is saved. Run the same command again and AI offers to **resume from where it stopped** — no need to re-describe the project.
+
+```
+$ tessera new my-shop
+# ... fails on step 5 ...
+# Progress saved!
+
+$ tessera new my-shop
+# Detected previous install. What would you like to do?
+# [0] Resume — continue from where it stopped
+# [1] Start fresh — delete and rebuild
+# [2] Abort
+
+> 0
+Resuming build — skipping completed steps...
+✓ [1/8] Create Laravel project (already done)
+✓ [2/8] Install packages (already done)
+✓ [3/8] Setting up admin panel (already done)
+✓ [4/8] Publishing configs (already done)
+⏳ [5/8] Creating project structure...
+```
 
 ## Available Stacks
 
@@ -238,7 +258,8 @@ tessera new my-shop
 - You describe what the client needs, AI does the rest
 
 **Options:**
-- `--force` — overwrites the directory if it already exists (useful for retrying)
+- `--force` — overwrites the directory if it already exists
+- If the directory has a previous `.tessera/state.json`, you'll be offered to **resume** instead
 
 ### `tessera tools` — "Which AI tools do I have?"
 
