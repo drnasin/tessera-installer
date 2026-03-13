@@ -172,13 +172,67 @@ Simple landing pages without a backend. HTML + Tailwind + Alpine.js. Styled to y
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `tessera new {name}` | Create a new project |
-| `tessera new {name} --force` | Overwrite existing directory |
-| `tessera doctor` | Check system readiness |
-| `tessera tools` | Show available AI tools |
-| `tessera --version` | Show version |
+### `tessera doctor` — "Am I ready?"
+
+Run this **first**, before anything else. It checks your system — PHP, Composer, AI tools, Node.js, disk space — and tells you what's missing. Think of it as a health check.
+
+```bash
+tessera doctor
+```
+
+**When to use:**
+- Before your first `tessera new` — to make sure everything is installed
+- When `tessera new` fails — to see if something is missing or broken
+- On a new machine — to quickly see what you need to install
+
+### `tessera new {name}` — "Build me a project"
+
+This is the main command. AI asks you about the project, picks the technology, and builds everything.
+
+```bash
+tessera new my-shop
+```
+
+**When to use:**
+- Every time you start a new project for a client
+- You describe what the client needs, AI does the rest
+
+**Options:**
+- `--force` — overwrites the directory if it already exists (useful for retrying)
+
+### `tessera tools` — "Which AI tools do I have?"
+
+Shows which AI CLI tools (Claude, Codex, Gemini) are installed. The first one found is used for scaffolding.
+
+```bash
+tessera tools
+```
+
+**When to use:**
+- If you're not sure which AI tool Tessera will use
+- After installing a new AI tool, to verify it's detected
+
+### `tessera --version`
+
+Shows the installed version.
+
+```bash
+tessera --version
+```
+
+### Typical workflow
+
+```bash
+# 1. Check your system (first time only)
+tessera doctor
+
+# 2. Create a project
+tessera new my-restaurant
+
+# 3. Start working
+cd my-restaurant
+php artisan serve
+```
 
 ## Prerequisites
 
