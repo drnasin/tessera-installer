@@ -82,7 +82,11 @@ final class GoStack implements StackInterface
             return false;
         }
 
-        $memory->init($directory, 'go', $requirements, $system->buildAiContext());
+        if ($memory->hasState()) {
+            $memory->updateContext($requirements, $system->buildAiContext());
+        } else {
+            $memory->init($directory, 'go', $requirements, $system->buildAiContext());
+        }
 
         // Step 1: AI scaffold — senior dev reasoning
         if ($memory->isStepDone('scaffold')) {

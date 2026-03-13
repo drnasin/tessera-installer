@@ -102,8 +102,12 @@ final class FlutterStack implements StackInterface
             Console::success('[1/5] Create Flutter project (already done)');
         }
 
-        // Init/re-init memory — project directory exists
-        $memory->init($directory, 'flutter', $requirements, $system->buildAiContext());
+        // Init or update memory — project directory exists
+        if ($memory->hasState()) {
+            $memory->updateContext($requirements, $system->buildAiContext());
+        } else {
+            $memory->init($directory, 'flutter', $requirements, $system->buildAiContext());
+        }
 
         // Step 2: AI configure — senior dev reasoning
         if ($memory->isStepDone('scaffold')) {

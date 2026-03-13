@@ -363,7 +363,15 @@ final class StepRunner
         callable $execute,
         ?callable $verify,
         bool $skippable,
+        int $depth = 0,
     ): bool {
+        if ($depth >= 5) {
+            Console::error("  Step '{$name}' failed after {$depth} manual fix attempts.");
+            $this->log[$name] = 'FAILED';
+
+            return $skippable;
+        }
+
         Console::line();
         Console::warn("AI couldn't fix: {$name}");
         Console::line();
@@ -427,6 +435,6 @@ final class StepRunner
         // Still failing — let user try again
         Console::fail("  Still failing: {$error}");
 
-        return $this->askUserToFix($name, "Previous fix didn't work.\n{$error}", $execute, $verify, $skippable);
+        return $this->askUserToFix($name, "Previous fix didn't work.\n{$error}", $execute, $verify, $skippable, $depth + 1);
     }
 }

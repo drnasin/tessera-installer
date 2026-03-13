@@ -108,8 +108,8 @@ final class LaravelStack implements StackInterface
             $memory->init($directory, 'laravel', $requirements, $system->buildAiContext());
         } else {
             Console::success('[1/8] Create Laravel project (already done)');
-            // Resuming — re-init memory to update requirements/system context
-            $memory->init($directory, 'laravel', $requirements, $system->buildAiContext());
+            // Resuming — update context but preserve completed steps
+            $memory->updateContext($requirements, $system->buildAiContext());
         }
 
         // Step 2: Install packages (skip if key packages already installed)

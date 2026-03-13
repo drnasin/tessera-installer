@@ -55,6 +55,29 @@ final class Memory
     }
 
     /**
+     * Update requirements and system context without wiping progress.
+     * Used when resuming a previous install.
+     *
+     * @param array<string, mixed> $requirements
+     */
+    public function updateContext(array $requirements, string $systemContext): void
+    {
+        $this->state['requirements'] = $requirements;
+        $this->state['system'] = $systemContext;
+        $this->state['status'] = 'in_progress';
+        $this->state['updated_at'] = date('Y-m-d H:i:s');
+        $this->save();
+    }
+
+    /**
+     * Check if memory has existing state (loaded from disk).
+     */
+    public function hasState(): bool
+    {
+        return ! empty($this->state);
+    }
+
+    /**
      * Record the start of a step.
      */
     public function startStep(string $step): void

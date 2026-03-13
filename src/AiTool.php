@@ -176,9 +176,8 @@ final class AiTool
             if (is_resource($pipes[2])) {
                 fclose($pipes[2]);
             }
+            $exitCode = proc_close($process);
         }
-
-        $exitCode = proc_close($process);
 
         return new AiResponse(
             success: $exitCode === 0,
