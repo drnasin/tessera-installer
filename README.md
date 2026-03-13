@@ -321,6 +321,12 @@ Optional (auto-installed if missing):
 
 ## After creating a project
 
+How you make changes depends on which stack was chosen:
+
+### Laravel (Tessera CMS)
+
+Laravel projects have a built-in AI Engine with full project awareness — it reads models, blocks, theme, admin, and knows the entire architecture.
+
 ```bash
 cd my-project
 
@@ -330,7 +336,7 @@ cat SETUP.md
 # Start dev server
 php artisan serve
 
-# AI chat in terminal
+# AI chat — describe what you need
 php artisan tessera
 
 # Direct request
@@ -343,7 +349,29 @@ php artisan tessera --fix
 php artisan tessera --audit
 ```
 
-In the admin panel (`/admin`) there's an AI chat widget in the bottom-right corner. It tracks what you're doing and offers help.
+For content changes (text, images, pages) — use the admin panel at `/admin`. There's an AI chat widget in the bottom-right corner that tracks what you're doing and offers help.
+
+For structural changes (new modules, block types, integrations) — use `php artisan tessera`.
+
+### Node.js / Go / Flutter / Static
+
+These stacks don't have a built-in AI Engine. Use your AI CLI tool directly — it reads the project and knows the structure:
+
+```bash
+cd my-project
+
+# Read setup instructions FIRST
+cat SETUP.md
+
+# Use your AI CLI tool directly
+claude "add user authentication with JWT"
+# or
+codex "create REST API for products"
+# or
+gemini "add dark mode toggle"
+```
+
+The AI reads the codebase and understands the project structure, so you don't need to explain the architecture — just describe what you need.
 
 ## Adding a new stack
 
