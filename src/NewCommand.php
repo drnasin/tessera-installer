@@ -114,10 +114,10 @@ final class NewCommand
             }
         }
 
-        // Step 7: Initialize memory
+        // Step 7: Create memory (lazy — does NOT create files until init() is called)
         $this->memory = new Memory($this->fullPath);
 
-        // Step 8: Scaffold
+        // Step 8: Scaffold (stack calls memory->init() AFTER creating the project directory)
         if (! $stack->scaffold($this->directory, $requirements, $this->ai, $this->system, $this->memory)) {
             // Rollback: remove partial directory on failure
             if (is_dir($this->fullPath)) {

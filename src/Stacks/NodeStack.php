@@ -78,8 +78,6 @@ final class NodeStack implements StackInterface
         $this->requirements = $requirements;
         $this->steps = new StepRunner($ai, $this->fullPath);
 
-        $memory->init($directory, 'node', $requirements, $system->buildAiContext());
-
         $desc = $requirements['description'] ?? 'Node.js project';
         $designStyle = $requirements['design_style'] ?? 'modern, clean';
         $designColors = $requirements['design_colors'] ?? 'use appropriate colors for the business type';
@@ -102,6 +100,8 @@ final class NodeStack implements StackInterface
 
             return false;
         }
+
+        $memory->init($directory, 'node', $requirements, $system->buildAiContext());
 
         // Step 2: AI scaffold — senior dev reasoning
         $this->steps->runAi(

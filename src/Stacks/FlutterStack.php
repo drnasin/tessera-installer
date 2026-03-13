@@ -60,7 +60,8 @@ final class FlutterStack implements StackInterface
         $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
         $this->steps = new StepRunner($ai, $this->fullPath);
 
-        $memory->init($directory, 'flutter', $requirements, $system->buildAiContext());
+        // NOTE: memory->init() is called AFTER flutter create
+        // because flutter create requires an empty/non-existent directory
 
         $desc = $requirements['description'] ?? 'Flutter app';
         $designStyle = $requirements['design_style'] ?? 'modern, clean';
@@ -89,6 +90,9 @@ final class FlutterStack implements StackInterface
         if (! $result) {
             return false;
         }
+
+        // Now safe to init memory — project directory exists
+        $memory->init($directory, 'flutter', $requirements, $system->buildAiContext());
 
         // Step 2: AI configure — senior dev reasoning
         $this->steps->runAi(

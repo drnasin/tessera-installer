@@ -78,7 +78,8 @@ final class LaravelStack implements StackInterface
         $this->requirements = $requirements;
         $this->steps = new StepRunner($ai, $this->fullPath);
 
-        $memory->init($directory, 'laravel', $requirements, $system->buildAiContext());
+        // NOTE: memory->init() is called AFTER composer create-project
+        // because composer requires an empty directory
 
         Console::line();
         Console::bold('Building your project — this takes about 10-15 minutes.');
@@ -97,6 +98,9 @@ final class LaravelStack implements StackInterface
         if (! $result) {
             return false;
         }
+
+        // Now safe to init memory — project directory exists and has content
+        $memory->init($directory, 'laravel', $requirements, $system->buildAiContext());
 
         // Step 2: Install packages
         Console::line();

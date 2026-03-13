@@ -56,8 +56,6 @@ final class StaticStack implements StackInterface
         $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
         $this->steps = new StepRunner($ai, $this->fullPath);
 
-        $memory->init($directory, 'static', $requirements, $system->buildAiContext());
-
         $desc = $requirements['description'] ?? 'Landing page';
         $designStyle = $requirements['design_style'] ?? 'modern, clean';
         $designColors = $requirements['design_colors'] ?? 'use appropriate colors for the business type';
@@ -74,6 +72,8 @@ final class StaticStack implements StackInterface
 
             return false;
         }
+
+        $memory->init($directory, 'static', $requirements, $system->buildAiContext());
 
         // Step 1: AI scaffold — senior dev reasoning
         $this->steps->runAi(

@@ -55,8 +55,6 @@ final class GoStack implements StackInterface
         $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
         $this->steps = new StepRunner($ai, $this->fullPath);
 
-        $memory->init($directory, 'go', $requirements, $system->buildAiContext());
-
         $desc = $requirements['description'] ?? 'Go backend';
         $langs = implode(', ', $requirements['languages'] ?? ['en']);
         $paymentProviders = $requirements['payment_providers'] ?? [];
@@ -76,6 +74,8 @@ final class GoStack implements StackInterface
 
             return false;
         }
+
+        $memory->init($directory, 'go', $requirements, $system->buildAiContext());
 
         // Step 1: AI scaffold — senior dev reasoning
         $this->steps->runAi(
