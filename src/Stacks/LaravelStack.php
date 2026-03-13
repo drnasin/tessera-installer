@@ -6,7 +6,9 @@ namespace Tessera\Installer\Stacks;
 
 use Tessera\Installer\AiTool;
 use Tessera\Installer\Console;
+use Tessera\Installer\Memory;
 use Tessera\Installer\StepRunner;
+use Tessera\Installer\SystemInfo;
 
 /**
  * Full Laravel + Filament + Tessera stack.
@@ -24,6 +26,10 @@ final class LaravelStack implements StackInterface
     private string $fullPath;
 
     private AiTool $ai;
+
+    private SystemInfo $system;
+
+    private Memory $memory;
 
     /** @var array<string, mixed> */
     private array $requirements;
@@ -44,7 +50,7 @@ final class LaravelStack implements StackInterface
             . 'multi-language sites, blog platforms, booking systems. '
             . 'Best for: content websites, web shops, '
             . 'business applications, internal tools, dashboards. '
-            . 'Stack: PHP 8.2+, Laravel 12, Filament 5, Livewire 4, Tailwind 4, MySQL/SQLite.';
+            . 'Stack: PHP 8.2+, Laravel (latest), Filament (latest), Livewire, Tailwind, MySQL/SQLite.';
     }
 
     public function preflight(): array
@@ -63,17 +69,26 @@ final class LaravelStack implements StackInterface
         return ['ready' => empty($missing), 'missing' => $missing];
     }
 
-    public function scaffold(string $directory, array $requirements, AiTool $ai): bool
+    public function scaffold(string $directory, array $requirements, AiTool $ai, SystemInfo $system, Memory $memory): bool
     {
         $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
         $this->ai = $ai;
+        $this->system = $system;
+        $this->memory = $memory;
         $this->requirements = $requirements;
         $this->steps = new StepRunner($ai, $this->fullPath);
+
+        $memory->init($directory, 'laravel', $requirements, $system->buildAiContext());
+
+        Console::line();
+        Console::bold('Building your project — this takes about 10-15 minutes.');
+        Console::line('  Go grab a coffee, AI is doing all the work.');
+        Console::line();
 
         // Step 1: Create Laravel project (runs in parent dir since project doesn't exist yet)
         $parentRunner = new StepRunner($ai, getcwd());
         $result = $parentRunner->runCommand(
-            name: 'Create Laravel project',
+            name: '[1/7] Create Laravel project',
             command: "composer create-project laravel/laravel {$directory} --prefer-dist --no-interaction",
             verify: fn (): ?string => is_file($this->fullPath . '/artisan') ? null : 'artisan file not found',
             fixHint: "Run: composer create-project laravel/laravel {$directory} --prefer-dist",
@@ -83,25 +98,38 @@ final class LaravelStack implements StackInterface
             return false;
         }
 
-        // Step 2: Install all packages (core + dev in one pass to avoid repeated autoload)
+        // Step 2: Install packages
+        Console::line();
+        Console::spinner('[2/7] Installing packages...');
         if (! $this->installAllPackages()) {
             return false;
         }
 
-        // Step 4: Filament setup
+        // Step 3: Filament setup
+        Console::line();
+        Console::spinner('[3/7] Setting up admin panel...');
         if (! $this->setupFilament()) {
             return false;
         }
 
-        // Step 5: Publish package configs
+        // Step 4: Publish configs
+        Console::line();
+        Console::spinner('[4/7] Publishing configs...');
         $this->publishConfigs();
 
-        // Step 6: Create Tessera directory structure
+        // Step 5: Create directory structure
+        Console::line();
+        Console::spinner('[5/7] Creating project structure...');
         if (! $this->createStructure()) {
             return false;
         }
 
-        // Step 7: AI builds models, views, content
+        // Step 6: AI builds everything
+        Console::line();
+        Console::bold('[6/7] AI is building your project — this is the big one...');
+        Console::line('  AI is creating models, pages, theme, and content.');
+        Console::line('  This takes a few minutes. Sit tight.');
+        Console::line();
         if (! $this->aiScaffold()) {
             return false;
         }
@@ -350,6 +378,36 @@ PROMPT,
         );
     }
 
+    /**
+     * Detect installed package versions from composer.lock.
+     */
+    private function detectVersions(): string
+    {
+        $lockFile = $this->fullPath . '/composer.lock';
+
+        if (! is_file($lockFile)) {
+            return 'Laravel (latest) with Filament (latest)';
+        }
+
+        $lock = json_decode((string) file_get_contents($lockFile), true);
+        $packages = array_merge($lock['packages'] ?? [], $lock['packages-dev'] ?? []);
+
+        $versions = ['PHP ' . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION];
+        $detect = ['laravel/framework' => 'Laravel', 'filament/filament' => 'Filament', 'livewire/livewire' => 'Livewire'];
+
+        foreach ($packages as $pkg) {
+            $name = $pkg['name'] ?? '';
+            if (isset($detect[$name])) {
+                $ver = ltrim($pkg['version'] ?? '', 'v');
+                // Extract major version (e.g. "12.5.3" → "12")
+                $major = explode('.', $ver)[0];
+                $versions[] = $detect[$name] . ' ' . $major;
+            }
+        }
+
+        return implode(', ', $versions);
+    }
+
     private function aiScaffold(): bool
     {
         $desc = $this->requirements['description'] ?? 'Web project';
@@ -358,12 +416,22 @@ PROMPT,
         $needsFrontend = ($this->requirements['needs_frontend'] ?? true) ? 'YES' : 'NO';
         $designStyle = $this->requirements['design_style'] ?? 'modern, clean';
         $designColors = $this->requirements['design_colors'] ?? 'use appropriate colors for the business type';
+        $stackVersions = $this->detectVersions();
+        $systemContext = $this->system->buildAiContext();
+        $memoryContext = $this->memory->buildAiContext();
 
         // Step A: Models, migrations, services
+        $this->memory->startStep('core_models');
         $this->steps->runAi(
-            name: 'AI: Core models & migrations',
+            name: 'Creating database models and services',
             prompt: <<<PROMPT
-You are a Tessera AI senior developer. The project is Laravel 12 with Filament 5.
+You are a Tessera AI senior developer building a project.
+
+{$systemContext}
+
+{$memoryContext}
+
+STACK: {$stackVersions}.
 You are working in the project root directory. The directory structure is already created.
 
 PROJECT DESCRIPTION: {$desc}
@@ -409,7 +477,7 @@ PROMPT,
 
         // Step B: Theme views
         $this->steps->runAi(
-            name: 'AI: Theme & block views',
+            name: 'Designing frontend theme and pages',
             prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Core models and services are already created.
 
@@ -463,7 +531,7 @@ PROMPT,
 
         // Step C: Filament resources
         $this->steps->runAi(
-            name: 'AI: Filament admin resources',
+            name: 'Building admin panel',
             prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Models, theme, and views are already created.
 
@@ -500,7 +568,7 @@ PROMPT,
 
         // Step D: Content & pages
         $this->steps->runAi(
-            name: 'AI: Pages & content',
+            name: 'Writing content and seeding data',
             prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Everything is set up — models, views, admin.
 

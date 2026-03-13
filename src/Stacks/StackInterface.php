@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace Tessera\Installer\Stacks;
 
 use Tessera\Installer\AiTool;
+use Tessera\Installer\Memory;
+use Tessera\Installer\SystemInfo;
 
 /**
  * Each technology stack implements this interface.
- *
- * Today: LaravelStack is fully implemented.
- * Tomorrow: GoStack, FlutterStack, NodeStack — just add a class.
  */
 interface StackInterface
 {
@@ -40,7 +39,7 @@ interface StackInterface
     /**
      * Create the project scaffold.
      */
-    public function scaffold(string $directory, array $requirements, AiTool $ai): bool;
+    public function scaffold(string $directory, array $requirements, AiTool $ai, SystemInfo $system, Memory $memory): bool;
 
     /**
      * Run post-scaffold setup (migrations, build, etc.)

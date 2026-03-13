@@ -24,6 +24,10 @@ final class NewCommand
 
     private AiTool $ai;
 
+    private SystemInfo $system;
+
+    private ?Memory $memory = null;
+
     private bool $force;
 
     public function __construct(string $directory, bool $force = false)
@@ -31,6 +35,7 @@ final class NewCommand
         $this->directory = $directory;
         $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
         $this->force = $force;
+        $this->system = SystemInfo::detect();
     }
 
     public function run(): int
@@ -80,19 +85,40 @@ final class NewCommand
             return 0;
         }
 
-        // Step 6: Check stack prerequisites
+        // Step 6: Check stack prerequisites — auto-install if missing
         $check = $stack->preflight();
         if (! $check['ready']) {
-            Console::error('Stack not ready. Missing:');
+            Console::warn('Some tools are missing:');
             foreach ($check['missing'] as $item) {
                 Console::line("  - {$item}");
             }
+            Console::line();
 
-            return 1;
+            if (Console::confirm('Want AI to try installing them?')) {
+                $this->autoInstallDependencies($check['missing']);
+
+                // Re-check after install
+                $check = $stack->preflight();
+                if (! $check['ready']) {
+                    Console::error('Still missing after install attempt:');
+                    foreach ($check['missing'] as $item) {
+                        Console::line("  - {$item}");
+                    }
+
+                    return 1;
+                }
+            } else {
+                Console::error('Install the missing tools and try again.');
+
+                return 1;
+            }
         }
 
-        // Step 7: Scaffold
-        if (! $stack->scaffold($this->directory, $requirements, $this->ai)) {
+        // Step 7: Initialize memory
+        $this->memory = new Memory($this->fullPath);
+
+        // Step 8: Scaffold
+        if (! $stack->scaffold($this->directory, $requirements, $this->ai, $this->system, $this->memory)) {
             // Rollback: remove partial directory on failure
             if (is_dir($this->fullPath)) {
                 Console::warn('Cleaning up partial project...');
@@ -140,6 +166,7 @@ final class NewCommand
         }
 
         Console::success("AI: {$this->ai->name()}");
+        Console::success("OS: {$this->system->os()} ({$this->system->packageManager()})");
 
         // Show available stacks
         $available = StackRegistry::available();
@@ -182,23 +209,30 @@ final class NewCommand
 
         $conversation = [];
         $stackContext = StackRegistry::buildAiContext();
+        $systemContext = $this->system->buildAiContext();
 
         // First AI question
         $initPrompt = <<<PROMPT
 You are a Tessera AI architect. You help a junior developer create a new project.
-AI tool: {$this->ai->name()}
+
+{$systemContext}
 
 {$stackContext}
 
-Your job is to ask SHORT questions to find out:
+Your job is to ask SHORT questions (one at a time) to understand:
 1. What the client does and what kind of project they need
 2. Special requirements (languages, e-commerce, mobile app, API...)
-3. Expected number of users (low, medium, high)
+3. Expected scale (small business site, medium platform, high-traffic system)
 4. Whether they want a designed frontend (landing pages, styled theme) or just backend/API
-5. If they want frontend — ask about design preferences (colors, style, mood)
+5. If they want frontend — ask about design preferences (colors, style, mood, reference sites)
 
-Ask your FIRST question — short, friendly. Only one question.
-Don't mention technical details — the junior doesn't need to know what Laravel or Go is.
+RULES:
+- Ask ONE question at a time — short and friendly
+- Do NOT mention technical details (no "Laravel", "React", "Go" etc.)
+- Speak as if talking to someone who knows their business but not programming
+- Be warm and professional
+
+Ask your FIRST question now.
 PROMPT;
 
         $response = $this->ai->execute($initPrompt, getcwd(), 60);
@@ -384,6 +418,44 @@ PROMPT;
         return $stack;
     }
 
+    /**
+     * Let AI install missing dependencies for the current OS.
+     *
+     * @param array<string> $missing
+     */
+    private function autoInstallDependencies(array $missing): void
+    {
+        $systemContext = $this->system->buildAiContext();
+        $missingList = implode("\n", array_map(fn (string $m): string => "- {$m}", $missing));
+
+        Console::spinner('AI is installing missing dependencies...');
+
+        $prompt = <<<PROMPT
+You need to install the following missing tools on this system:
+
+{$missingList}
+
+{$systemContext}
+
+INSTRUCTIONS:
+1. Use the correct package manager for this OS (shown above)
+2. Install each missing tool
+3. Verify each installation works by running its version command
+4. If a package manager is not available, install it first or use the most appropriate alternative
+5. On Windows, prefer scoop or choco. On macOS, use brew. On Linux, use apt/dnf.
+6. Do NOT ask for confirmation — just install
+7. If one tool fails, continue with the others
+PROMPT;
+
+        $response = $this->ai->execute($prompt, getcwd(), 300);
+
+        if ($response->success) {
+            Console::success('Dependency installation complete');
+        } else {
+            Console::warn('Some dependencies may not have been installed: ' . $response->error);
+        }
+    }
+
     private function gitInit(): void
     {
         $git = Console::execSilent('git --version');
@@ -400,6 +472,8 @@ PROMPT;
 
     private function showComplete(StackInterface $stack): void
     {
+        // Update memory
+        $this->memory?->complete();
         $info = $stack->completionInfo($this->directory);
 
         Console::line();

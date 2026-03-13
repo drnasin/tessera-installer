@@ -40,12 +40,15 @@ if (! $loaded) {
     require $src . '/AiResponse.php';
     require $src . '/AiTool.php';
     require $src . '/Console.php';
+    require $src . '/SystemInfo.php';
+    require $src . '/Memory.php';
     require $src . '/NewCommand.php';
 }
 
 use Tessera\Installer\AiTool;
 use Tessera\Installer\Console;
 use Tessera\Installer\NewCommand;
+use Tessera\Installer\SystemInfo;
 
 // ─── Parse arguments ───
 
@@ -55,7 +58,7 @@ $command = $args[0] ?? null;
 // ─── Version ───
 
 if ($command === '--version' || $command === '-v') {
-    Console::line('Tessera Installer v1.0.0');
+    Console::line('Tessera Installer v1.3.0');
     exit(0);
 }
 
@@ -70,6 +73,13 @@ if ($command === '--help' || $command === '-h' || $command === null) {
 
 if ($command === 'tools') {
     showTools();
+    exit(0);
+}
+
+// ─── Doctor ───
+
+if ($command === 'doctor') {
+    showDoctor();
     exit(0);
 }
 
@@ -112,6 +122,7 @@ function showHelp(): void
     Console::line('  Usage:');
     Console::line('    tessera new {project-name}           Create a new Tessera project');
     Console::line('    tessera new {project-name} --force   Overwrite existing directory');
+    Console::line('    tessera doctor                       Check if everything is ready');
     Console::line('    tessera tools                        Show available AI tools');
     Console::line('    tessera --version                    Version');
     Console::line('    tessera --help                       This message');
@@ -145,6 +156,92 @@ function showTools(): void
 
     foreach ($tools as $name => $info) {
         Console::success("{$name}: {$info['version']}");
+    }
+
+    Console::line();
+}
+
+function showDoctor(): void
+{
+    $system = SystemInfo::detect();
+
+    Console::line();
+    Console::cyan('  TESSERA DOCTOR — System Check');
+    Console::line();
+
+    Console::bold("System:");
+    Console::line("  OS: {$system->os()}");
+    Console::line("  Package manager: {$system->packageManager()}");
+    Console::line();
+
+    $allGood = true;
+
+    Console::bold("Required:");
+
+    // PHP
+    if ($system->hasTool('php')) {
+        Console::success("PHP — {$system->toolVersion('php')}");
+    } else {
+        Console::fail('PHP — not found (need 8.2+)');
+        $allGood = false;
+    }
+
+    // Composer
+    if ($system->hasTool('composer')) {
+        Console::success("Composer — {$system->toolVersion('composer')}");
+    } else {
+        Console::fail('Composer — not found');
+        $allGood = false;
+    }
+
+    Console::line();
+    Console::bold("AI tools (need at least one):");
+
+    $aiTools = AiTool::detectAll();
+    if (empty($aiTools)) {
+        Console::fail('No AI tools found!');
+        Console::line('  Install one:');
+        Console::line('    npm install -g @anthropic-ai/claude-code');
+        Console::line('    npm install -g @google/gemini-cli');
+        Console::line('    npm install -g @openai/codex');
+        $allGood = false;
+    } else {
+        foreach ($aiTools as $name => $info) {
+            Console::success("{$name} — {$info['version']}");
+        }
+    }
+
+    Console::line();
+    Console::bold("Optional (depends on stack):");
+
+    $optional = ['node' => 'Node.js', 'go' => 'Go', 'flutter' => 'Flutter', 'dart' => 'Dart', 'docker' => 'Docker', 'git' => 'Git'];
+    foreach ($optional as $tool => $label) {
+        if ($system->hasTool($tool)) {
+            Console::success("{$label} — {$system->toolVersion($tool)}");
+        } else {
+            Console::line("  \033[90m{$label} — not installed\033[0m");
+        }
+    }
+
+    Console::line();
+
+    // Disk space
+    $freeBytes = disk_free_space(getcwd() ?: '.');
+    if ($freeBytes !== false) {
+        $freeGb = round($freeBytes / 1073741824, 1);
+        if ($freeGb >= 1) {
+            Console::success("Disk space: {$freeGb} GB free");
+        } else {
+            Console::warn("Disk space: {$freeGb} GB free — might be tight");
+        }
+    }
+
+    Console::line();
+
+    if ($allGood) {
+        Console::cyan('  All good! Run: tessera new my-project');
+    } else {
+        Console::error('  Fix the issues above and try again.');
     }
 
     Console::line();
