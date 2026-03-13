@@ -194,6 +194,8 @@ Your job is to ask SHORT questions to find out:
 1. What the client does and what kind of project they need
 2. Special requirements (languages, e-commerce, mobile app, API...)
 3. Expected number of users (low, medium, high)
+4. Whether they want a designed frontend (landing pages, styled theme) or just backend/API
+5. If they want frontend — ask about design preferences (colors, style, mood)
 
 Ask your FIRST question — short, friendly. Only one question.
 Don't mention technical details — the junior doesn't need to know what Laravel or Go is.
@@ -219,7 +221,7 @@ PROMPT;
 
             $conversation[] = ['role' => 'junior', 'text' => $answer];
 
-            if (in_array(strtolower(trim($answer)), ['gotovo', 'to je to', 'done', 'nista vise', 'kraj', 'that\'s it'], true)) {
+            if (in_array(strtolower(trim($answer)), ['done', 'that\'s it', 'nothing else', 'finished', 'all set'], true)) {
                 break;
             }
 
@@ -262,6 +264,9 @@ From this conversation, extract project requirements. Respond with ONLY valid JS
     "needs_shop": false,
     "needs_mobile": false,
     "needs_realtime": false,
+    "needs_frontend": true,
+    "design_style": "modern, clean, professional",
+    "design_colors": "brand colors or preferences if mentioned",
     "expected_users": "low",
     "special": ""
 }
@@ -446,6 +451,9 @@ PROMPT;
             'needs_shop' => (bool) ($json['needs_shop'] ?? false),
             'needs_mobile' => (bool) ($json['needs_mobile'] ?? false),
             'needs_realtime' => (bool) ($json['needs_realtime'] ?? false),
+            'needs_frontend' => (bool) ($json['needs_frontend'] ?? true),
+            'design_style' => $json['design_style'] ?? 'modern, clean',
+            'design_colors' => $json['design_colors'] ?? '',
             'expected_users' => $json['expected_users'] ?? 'low',
             'special' => $json['special'] ?? '',
             'conversation' => $conversation,
