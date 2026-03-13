@@ -78,54 +78,84 @@ final class LaravelStack implements StackInterface
         $this->requirements = $requirements;
         $this->steps = new StepRunner($ai, $this->fullPath);
 
-        // NOTE: memory->init() is called AFTER composer create-project
-        // because composer requires an empty directory
+        // Check if we're resuming a previous install
+        $resuming = is_file($this->fullPath . '/artisan');
 
         Console::line();
-        Console::bold('Building your project — this takes about 10-15 minutes.');
-        Console::line('  Go grab a coffee, AI is doing all the work.');
+        if ($resuming) {
+            Console::bold('Resuming build — skipping completed steps...');
+        } else {
+            Console::bold('Building your project — this takes about 10-15 minutes.');
+            Console::line('  Go grab a coffee, AI is doing all the work.');
+        }
         Console::line();
 
-        // Step 1: Create Laravel project (runs in parent dir since project doesn't exist yet)
-        $parentRunner = new StepRunner($ai, getcwd());
-        $result = $parentRunner->runCommand(
-            name: '[1/8] Create Laravel project',
-            command: "composer create-project laravel/laravel {$directory} --prefer-dist --no-interaction",
-            verify: fn (): ?string => is_file($this->fullPath . '/artisan') ? null : 'artisan file not found',
-            fixHint: "Run: composer create-project laravel/laravel {$directory} --prefer-dist",
-        );
+        // Step 1: Create Laravel project (skip if resuming — artisan already exists)
+        if (! $resuming) {
+            $parentRunner = new StepRunner($ai, getcwd());
+            $result = $parentRunner->runCommand(
+                name: '[1/8] Create Laravel project',
+                command: "composer create-project laravel/laravel {$directory} --prefer-dist --no-interaction",
+                verify: fn (): ?string => is_file($this->fullPath . '/artisan') ? null : 'artisan file not found',
+                fixHint: "Run: composer create-project laravel/laravel {$directory} --prefer-dist",
+            );
 
-        if (! $result) {
-            return false;
+            if (! $result) {
+                return false;
+            }
+
+            // First run — init memory now that project directory exists
+            $memory->init($directory, 'laravel', $requirements, $system->buildAiContext());
+        } else {
+            Console::success('[1/8] Create Laravel project (already done)');
+            // Resuming — re-init memory to update requirements/system context
+            $memory->init($directory, 'laravel', $requirements, $system->buildAiContext());
         }
 
-        // Now safe to init memory — project directory exists and has content
-        $memory->init($directory, 'laravel', $requirements, $system->buildAiContext());
-
-        // Step 2: Install packages
-        Console::line();
-        Console::spinner('[2/8] Installing packages...');
-        if (! $this->installAllPackages()) {
-            return false;
+        // Step 2: Install packages (skip if key packages already installed)
+        if ($this->memory->isStepDone('packages')) {
+            Console::success('[2/8] Install packages (already done)');
+        } else {
+            Console::line();
+            Console::spinner('[2/8] Installing packages...');
+            if (! $this->installAllPackages()) {
+                return false;
+            }
+            $memory->completeStep('packages');
         }
 
         // Step 3: Filament setup
-        Console::line();
-        Console::spinner('[3/8] Setting up admin panel...');
-        if (! $this->setupFilament()) {
-            return false;
+        if ($this->memory->isStepDone('filament')) {
+            Console::success('[3/8] Setting up admin panel (already done)');
+        } else {
+            Console::line();
+            Console::spinner('[3/8] Setting up admin panel...');
+            if (! $this->setupFilament()) {
+                return false;
+            }
+            $this->memory->completeStep('filament');
         }
 
         // Step 4: Publish configs
-        Console::line();
-        Console::spinner('[4/8] Publishing configs...');
-        $this->publishConfigs();
+        if ($this->memory->isStepDone('configs')) {
+            Console::success('[4/8] Publishing configs (already done)');
+        } else {
+            Console::line();
+            Console::spinner('[4/8] Publishing configs...');
+            $this->publishConfigs();
+            $this->memory->completeStep('configs');
+        }
 
         // Step 5: Create directory structure
-        Console::line();
-        Console::spinner('[5/8] Creating project structure...');
-        if (! $this->createStructure()) {
-            return false;
+        if ($this->memory->isStepDone('structure')) {
+            Console::success('[5/8] Creating project structure (already done)');
+        } else {
+            Console::line();
+            Console::spinner('[5/8] Creating project structure...');
+            if (! $this->createStructure()) {
+                return false;
+            }
+            $this->memory->completeStep('structure');
         }
 
         // Step 6: AI builds everything
@@ -441,6 +471,9 @@ PROMPT,
         $memoryContext = $this->memory->buildAiContext();
 
         // Step A: Models, migrations, services
+        if ($this->memory->isStepDone('core_models')) {
+            Console::success('Creating database models and services (already done)');
+        } else {
         $this->memory->startStep('core_models');
         $this->steps->runAi(
             name: 'Creating database models and services',
@@ -524,8 +557,14 @@ PROMPT,
             },
             timeout: 600,
         );
+        $this->memory->completeStep('core_models');
+        } // end if !isStepDone('core_models')
 
         // Step B: Theme views
+        if ($this->memory->isStepDone('theme')) {
+            Console::success('Designing frontend theme and pages (already done)');
+        } else {
+        $this->memory->startStep('theme');
         $this->steps->runAi(
             name: 'Designing frontend theme and pages',
             prompt: <<<PROMPT
@@ -599,8 +638,14 @@ PROMPT,
             skippable: true,
             timeout: 600,
         );
+        $this->memory->completeStep('theme');
+        } // end if !isStepDone('theme')
 
         // Step C: Filament resources
+        if ($this->memory->isStepDone('admin')) {
+            Console::success('Building admin panel (already done)');
+        } else {
+        $this->memory->startStep('admin');
         $this->steps->runAi(
             name: 'Building admin panel',
             prompt: <<<PROMPT
@@ -663,8 +708,14 @@ PROMPT,
             skippable: true,
             timeout: 600,
         );
+        $this->memory->completeStep('admin');
+        } // end if !isStepDone('admin')
 
         // Step D: Content & pages
+        if ($this->memory->isStepDone('content')) {
+            Console::success('Writing content and seeding data (already done)');
+        } else {
+        $this->memory->startStep('content');
         $this->steps->runAi(
             name: 'Writing content and seeding data',
             prompt: <<<PROMPT
@@ -720,8 +771,14 @@ PROMPT,
             skippable: true,
             timeout: 600,
         );
+        $this->memory->completeStep('content');
+        } // end if !isStepDone('content')
 
         // Step E: Generate tests
+        if ($this->memory->isStepDone('tests')) {
+            Console::success('AI: Generate tests (already done)');
+        } else {
+        $this->memory->startStep('tests');
         $this->steps->runAi(
             name: 'AI: Generate tests',
             prompt: <<<PROMPT
@@ -772,11 +829,22 @@ PROMPT,
             skippable: true,
             timeout: 600,
         );
+        $this->memory->completeStep('tests');
+        } // end if !isStepDone('tests')
 
         // Step F: Run tests and fix failures
+        if (!$this->memory->isStepDone('tests_fixed')) {
         $this->runAndFixTests();
+        $this->memory->completeStep('tests_fixed');
+        } else {
+            Console::success('AI: Fix failing tests (already done)');
+        }
 
         // Step G: Generate developer handoff — SETUP.md with what the dev needs to do
+        if ($this->memory->isStepDone('setup_md')) {
+            Console::success('Generating setup instructions for developer (already done)');
+        } else {
+        $this->memory->startStep('setup_md');
         $this->steps->runAi(
             name: 'Generating setup instructions for developer',
             prompt: <<<PROMPT
@@ -845,6 +913,8 @@ PROMPT,
             skippable: true,
             timeout: 300,
         );
+        $this->memory->completeStep('setup_md');
+        } // end if !isStepDone('setup_md')
 
         return true;
     }

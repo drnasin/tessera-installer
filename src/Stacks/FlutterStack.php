@@ -74,27 +74,42 @@ final class FlutterStack implements StackInterface
         $versions = $this->detectVersions();
         $systemContext = $system->buildAiContext();
 
+        // Check if we're resuming
+        $resuming = is_file($this->fullPath . '/pubspec.yaml');
+
         Console::line();
-        Console::bold('Building your app — this takes about 5-10 minutes.');
+        if ($resuming) {
+            Console::bold('Resuming build — skipping completed steps...');
+        } else {
+            Console::bold('Building your app — this takes about 5-10 minutes.');
+        }
         Console::line();
 
-        // Step 1: Create Flutter project
-        $parentRunner = new StepRunner($ai, getcwd());
-        $result = $parentRunner->runCommand(
-            name: '[1/5] Create Flutter project',
-            command: "flutter create {$directory} --org com.tessera --no-pub",
-            verify: fn (): ?string => is_file($this->fullPath . '/pubspec.yaml') ? null : 'pubspec.yaml not found',
-            fixHint: "Run: flutter create {$directory} --org com.tessera",
-        );
+        // Step 1: Create Flutter project (skip if resuming)
+        if (! $resuming) {
+            $parentRunner = new StepRunner($ai, getcwd());
+            $result = $parentRunner->runCommand(
+                name: '[1/5] Create Flutter project',
+                command: "flutter create {$directory} --org com.tessera --no-pub",
+                verify: fn (): ?string => is_file($this->fullPath . '/pubspec.yaml') ? null : 'pubspec.yaml not found',
+                fixHint: "Run: flutter create {$directory} --org com.tessera",
+            );
 
-        if (! $result) {
-            return false;
+            if (! $result) {
+                return false;
+            }
+        } else {
+            Console::success('[1/5] Create Flutter project (already done)');
         }
 
-        // Now safe to init memory — project directory exists
+        // Init/re-init memory — project directory exists
         $memory->init($directory, 'flutter', $requirements, $system->buildAiContext());
 
         // Step 2: AI configure — senior dev reasoning
+        if ($memory->isStepDone('scaffold')) {
+            Console::success('[2/5] Configuring app structure and screens (already done)');
+        } else {
+        $memory->startStep('scaffold');
         $this->steps->runAi(
             name: '[2/5] Configuring app structure and screens',
             prompt: <<<PROMPT
@@ -178,8 +193,14 @@ PROMPT,
             skippable: true,
             timeout: 600,
         );
+        $memory->completeStep('scaffold');
+        } // end if !isStepDone('scaffold')
 
         // Step 3: Generate tests
+        if ($memory->isStepDone('tests')) {
+            Console::success('[3/5] Generating tests (already done)');
+        } else {
+        $memory->startStep('tests');
         $this->steps->runAi(
             name: '[3/5] Generating tests',
             prompt: <<<PROMPT
@@ -197,8 +218,14 @@ PROMPT,
             skippable: true,
             timeout: 300,
         );
+        $memory->completeStep('tests');
+        } // end if !isStepDone('tests')
 
         // Step 4: Run tests and fix
+        if ($memory->isStepDone('tests_fixed')) {
+            Console::success('[4/5] Running and fixing tests (already done)');
+        } else {
+        $memory->startStep('tests_fixed');
         $this->steps->runAi(
             name: '[4/5] Running and fixing tests',
             prompt: <<<PROMPT
@@ -210,8 +237,14 @@ PROMPT,
             skippable: true,
             timeout: 300,
         );
+        $memory->completeStep('tests_fixed');
+        } // end if !isStepDone('tests_fixed')
 
         // Step 5: SETUP.md — developer handoff
+        if ($memory->isStepDone('setup_md')) {
+            Console::success('[5/5] Generating setup instructions (already done)');
+        } else {
+        $memory->startStep('setup_md');
         $this->steps->runAi(
             name: '[5/5] Generating setup instructions',
             prompt: <<<PROMPT
@@ -250,6 +283,8 @@ PROMPT,
             skippable: true,
             timeout: 300,
         );
+        $memory->completeStep('setup_md');
+        } // end if !isStepDone('setup_md')
 
         $this->steps->printSummary();
 

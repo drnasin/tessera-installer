@@ -63,8 +63,15 @@ final class StaticStack implements StackInterface
         $nodeVersion = $this->detectVersions();
         $systemContext = $system->buildAiContext();
 
+        // Check if we're resuming
+        $resuming = is_dir($this->fullPath) && is_file($this->fullPath . '/.tessera/state.json');
+
         Console::line();
-        Console::bold('Building your site — this takes about 2-3 minutes.');
+        if ($resuming) {
+            Console::bold('Resuming build — skipping completed steps...');
+        } else {
+            Console::bold('Building your site — this takes about 2-3 minutes.');
+        }
         Console::line();
 
         if (! @mkdir($this->fullPath, 0755, true) && ! is_dir($this->fullPath)) {
@@ -76,6 +83,10 @@ final class StaticStack implements StackInterface
         $memory->init($directory, 'static', $requirements, $system->buildAiContext());
 
         // Step 1: AI scaffold — senior dev reasoning
+        if ($memory->isStepDone('scaffold')) {
+            Console::success('[1/3] Creating website (already done)');
+        } else {
+        $memory->startStep('scaffold');
         $this->steps->runAi(
             name: '[1/3] Creating website',
             prompt: <<<PROMPT
@@ -141,8 +152,14 @@ PROMPT,
             },
             timeout: 300,
         );
+        $memory->completeStep('scaffold');
+        } // end if !isStepDone('scaffold')
 
         // Step 2: Validate and polish
+        if ($memory->isStepDone('polish')) {
+            Console::success('[2/3] Validating and polishing (already done)');
+        } else {
+        $memory->startStep('polish');
         $this->steps->runAi(
             name: '[2/3] Validating and polishing',
             prompt: <<<PROMPT
@@ -163,8 +180,14 @@ PROMPT,
             skippable: true,
             timeout: 120,
         );
+        $memory->completeStep('polish');
+        } // end if !isStepDone('polish')
 
         // Step 3: SETUP.md — developer handoff
+        if ($memory->isStepDone('setup_md')) {
+            Console::success('[3/3] Generating setup instructions (already done)');
+        } else {
+        $memory->startStep('setup_md');
         $this->steps->runAi(
             name: '[3/3] Generating setup instructions',
             prompt: <<<PROMPT
@@ -202,6 +225,8 @@ PROMPT,
             skippable: true,
             timeout: 120,
         );
+        $memory->completeStep('setup_md');
+        } // end if !isStepDone('setup_md')
 
         $this->steps->printSummary();
 

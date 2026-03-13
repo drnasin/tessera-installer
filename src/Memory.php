@@ -65,6 +65,20 @@ final class Memory
     }
 
     /**
+     * Check if a step was already completed (for resume support).
+     */
+    public function isStepDone(string $step): bool
+    {
+        foreach ($this->state['completed_steps'] ?? [] as $completed) {
+            if (($completed['name'] ?? '') === $step) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Record a completed step.
      */
     public function completeStep(string $step): void

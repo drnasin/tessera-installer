@@ -65,8 +65,15 @@ final class GoStack implements StackInterface
         $goVersion = $this->detectVersions();
         $systemContext = $system->buildAiContext();
 
+        // Check if we're resuming
+        $resuming = is_dir($this->fullPath) && is_file($this->fullPath . '/.tessera/state.json');
+
         Console::line();
-        Console::bold('Building your project — this takes about 5 minutes.');
+        if ($resuming) {
+            Console::bold('Resuming build — skipping completed steps...');
+        } else {
+            Console::bold('Building your project — this takes about 5 minutes.');
+        }
         Console::line();
 
         if (! @mkdir($this->fullPath, 0755, true) && ! is_dir($this->fullPath)) {
@@ -78,6 +85,10 @@ final class GoStack implements StackInterface
         $memory->init($directory, 'go', $requirements, $system->buildAiContext());
 
         // Step 1: AI scaffold — senior dev reasoning
+        if ($memory->isStepDone('scaffold')) {
+            Console::success('[1/4] Creating project structure (already done)');
+        } else {
+        $memory->startStep('scaffold');
         $this->steps->runAi(
             name: '[1/4] Creating project structure',
             prompt: <<<PROMPT
@@ -150,8 +161,14 @@ PROMPT,
             },
             timeout: 600,
         );
+        $memory->completeStep('scaffold');
+        } // end if !isStepDone('scaffold')
 
         // Step 2: Generate tests
+        if ($memory->isStepDone('tests')) {
+            Console::success('[2/4] Generating tests (already done)');
+        } else {
+        $memory->startStep('tests');
         $this->steps->runAi(
             name: '[2/4] Generating tests',
             prompt: <<<PROMPT
@@ -171,8 +188,14 @@ PROMPT,
             skippable: true,
             timeout: 300,
         );
+        $memory->completeStep('tests');
+        } // end if !isStepDone('tests')
 
         // Step 3: Run tests and fix
+        if ($memory->isStepDone('tests_fixed')) {
+            Console::success('[3/4] Running and fixing tests (already done)');
+        } else {
+        $memory->startStep('tests_fixed');
         $this->steps->runAi(
             name: '[3/4] Running and fixing tests',
             prompt: <<<PROMPT
@@ -184,8 +207,14 @@ PROMPT,
             skippable: true,
             timeout: 300,
         );
+        $memory->completeStep('tests_fixed');
+        } // end if !isStepDone('tests_fixed')
 
         // Step 4: SETUP.md — developer handoff
+        if ($memory->isStepDone('setup_md')) {
+            Console::success('[4/4] Generating setup instructions (already done)');
+        } else {
+        $memory->startStep('setup_md');
         $this->steps->runAi(
             name: '[4/4] Generating setup instructions',
             prompt: <<<PROMPT
@@ -220,6 +249,8 @@ PROMPT,
             skippable: true,
             timeout: 300,
         );
+        $memory->completeStep('setup_md');
+        } // end if !isStepDone('setup_md')
 
         $this->steps->printSummary();
 

@@ -47,17 +47,14 @@ final class NewCommand
             return 1;
         }
 
-        // Step 2: Check directory
+        // Step 2: Check directory — resume or overwrite?
         if (is_dir($this->fullPath)) {
-            if (! $this->force) {
-                Console::error("Directory '{$this->directory}' already exists.");
-                Console::line('  Use --force to overwrite.');
+            $resumeResult = $this->handleExistingDirectory();
 
-                return 1;
+            if ($resumeResult !== null) {
+                return $resumeResult;
             }
-
-            Console::warn("Directory '{$this->directory}' exists. Overwriting (--force)...");
-            self::removeDirectory($this->fullPath);
+            // resumeResult === null means: directory is clean, continue with fresh install
         }
 
         // Step 3: AI-driven conversation to understand requirements
@@ -67,77 +64,7 @@ final class NewCommand
             return 1;
         }
 
-        // Step 4: AI decides technology stack
-        $stack = $this->decideStack($requirements);
-
-        if ($stack === null) {
-            return 1;
-        }
-
-        // Step 5: Confirm with junior
-        Console::line();
-        Console::bold("AI recommends: {$stack->label()}");
-        Console::line();
-
-        if (! Console::confirm('Continue?')) {
-            Console::warn('Cancelled.');
-
-            return 0;
-        }
-
-        // Step 6: Check stack prerequisites — auto-install if missing
-        $check = $stack->preflight();
-        if (! $check['ready']) {
-            Console::warn('Some tools are missing:');
-            foreach ($check['missing'] as $item) {
-                Console::line("  - {$item}");
-            }
-            Console::line();
-
-            if (Console::confirm('Want AI to try installing them?')) {
-                $this->autoInstallDependencies($check['missing']);
-
-                // Re-check after install
-                $check = $stack->preflight();
-                if (! $check['ready']) {
-                    Console::error('Still missing after install attempt:');
-                    foreach ($check['missing'] as $item) {
-                        Console::line("  - {$item}");
-                    }
-
-                    return 1;
-                }
-            } else {
-                Console::error('Install the missing tools and try again.');
-
-                return 1;
-            }
-        }
-
-        // Step 7: Create memory (lazy — does NOT create files until init() is called)
-        $this->memory = new Memory($this->fullPath);
-
-        // Step 8: Scaffold (stack calls memory->init() AFTER creating the project directory)
-        if (! $stack->scaffold($this->directory, $requirements, $this->ai, $this->system, $this->memory)) {
-            // Rollback: remove partial directory on failure
-            if (is_dir($this->fullPath)) {
-                Console::warn('Cleaning up partial project...');
-                self::removeDirectory($this->fullPath);
-            }
-
-            return 1;
-        }
-
-        // Step 8: Post-setup
-        $stack->postSetup($this->directory);
-
-        // Step 9: Git init
-        $this->gitInit();
-
-        // Step 10: Done!
-        $this->showComplete($stack);
-
-        return 0;
+        return $this->buildProject($requirements);
     }
 
     private function showBanner(): void
@@ -193,6 +120,161 @@ final class NewCommand
         }
 
         return true;
+    }
+
+    /**
+     * Handle existing directory: offer resume, overwrite, or abort.
+     *
+     * @return int|null Null if directory was cleaned and we should continue fresh.
+     */
+    private function handleExistingDirectory(): ?int
+    {
+        $stateFile = $this->fullPath . DIRECTORY_SEPARATOR . '.tessera' . DIRECTORY_SEPARATOR . 'state.json';
+
+        // Check if there's a previous install we can resume
+        if (is_file($stateFile)) {
+            $stateContent = file_get_contents($stateFile);
+            $state = $stateContent !== false ? json_decode($stateContent, true) : null;
+
+            if (is_array($state) && ! empty($state['requirements'])) {
+                $stackName = $state['stack'] ?? 'unknown';
+                $status = $state['status'] ?? 'unknown';
+                $completedSteps = $state['completed_steps'] ?? [];
+                $completedCount = count($completedSteps);
+
+                Console::line();
+                Console::bold("Found previous installation (stack: {$stackName}, status: {$status})");
+
+                if ($completedCount > 0) {
+                    Console::line("  Completed steps: {$completedCount}");
+                    foreach ($completedSteps as $step) {
+                        Console::success("    {$step['name']}");
+                    }
+                }
+
+                if (! empty($state['failed_steps'])) {
+                    foreach ($state['failed_steps'] as $fail) {
+                        Console::fail("    {$fail['name']}: {$fail['error']}");
+                    }
+                }
+
+                Console::line();
+                $choice = Console::choice('What would you like to do?', [
+                    'Resume — continue from where it stopped (no need to re-describe the project)',
+                    'Start fresh — overwrite everything',
+                    'Abort',
+                ]);
+
+                if ($choice === 2) {
+                    Console::warn('Aborted.');
+
+                    return 0;
+                }
+
+                if ($choice === 0) {
+                    // Resume with saved requirements
+                    Console::success('Resuming previous installation...');
+
+                    return $this->buildProject($state['requirements']);
+                }
+
+                // Choice 1: start fresh — fall through to remove directory
+            }
+        }
+
+        // No state file, or user chose to start fresh
+        if (! $this->force) {
+            Console::error("Directory '{$this->directory}' already exists.");
+            Console::line('  Use --force to overwrite, or resume if a previous install exists.');
+
+            return 1;
+        }
+
+        Console::warn("Directory '{$this->directory}' exists. Overwriting (--force)...");
+        self::removeDirectory($this->fullPath);
+
+        return null; // Continue with fresh install
+    }
+
+    /**
+     * Build the project: decide stack, check deps, scaffold.
+     *
+     * @param array<string, mixed> $requirements
+     */
+    private function buildProject(array $requirements): int
+    {
+        // Decide technology stack
+        $stack = $this->decideStack($requirements);
+
+        if ($stack === null) {
+            return 1;
+        }
+
+        // Confirm with junior
+        Console::line();
+        Console::bold("AI recommends: {$stack->label()}");
+        Console::line();
+
+        if (! Console::confirm('Continue?')) {
+            Console::warn('Cancelled.');
+
+            return 0;
+        }
+
+        // Check stack prerequisites — auto-install if missing
+        $check = $stack->preflight();
+        if (! $check['ready']) {
+            Console::warn('Some tools are missing:');
+            foreach ($check['missing'] as $item) {
+                Console::line("  - {$item}");
+            }
+            Console::line();
+
+            if (Console::confirm('Want AI to try installing them?')) {
+                $this->autoInstallDependencies($check['missing']);
+
+                $check = $stack->preflight();
+                if (! $check['ready']) {
+                    Console::error('Still missing after install attempt:');
+                    foreach ($check['missing'] as $item) {
+                        Console::line("  - {$item}");
+                    }
+
+                    return 1;
+                }
+            } else {
+                Console::error('Install the missing tools and try again.');
+
+                return 1;
+            }
+        }
+
+        // Create memory (lazy — does NOT create files until init() is called by stack)
+        $this->memory = new Memory($this->fullPath);
+
+        // Scaffold (stack calls memory->init() AFTER creating the project directory)
+        if (! $stack->scaffold($this->directory, $requirements, $this->ai, $this->system, $this->memory)) {
+            // Save state on failure — don't delete, allow resume
+            $this->memory?->fail('Scaffold failed — run tessera new again to resume');
+
+            Console::line();
+            Console::warn('Build failed. Your progress is saved.');
+            Console::line('  Run the same command again to resume from where it stopped.');
+            Console::line("  Or use --force to start fresh: tessera new {$this->directory} --force");
+
+            return 1;
+        }
+
+        // Post-setup
+        $stack->postSetup($this->directory);
+
+        // Git init
+        $this->gitInit();
+
+        // Done!
+        $this->showComplete($stack);
+
+        return 0;
     }
 
     /**

@@ -224,8 +224,11 @@ final class StepRunner
     ): bool {
         return $this->run(
             name: $name,
-            execute: function () use ($prompt, $timeout): bool {
+            execute: function () use ($name, $prompt, $timeout): bool {
+                $startTime = time();
                 $response = $this->ai->execute($prompt, $this->workingDir, $timeout);
+                $elapsed = time() - $startTime;
+                $elapsedMin = round($elapsed / 60, 1);
 
                 if ($response->success) {
                     // Show AI output (trimmed)
@@ -237,10 +240,25 @@ final class StepRunner
                         Console::line("  {$output}");
                     }
 
+                    if ($elapsed > 30) {
+                        Console::line("  ({$elapsedMin} min)");
+                    }
+
                     return true;
                 }
 
-                Console::warn("  AI error: {$response->error}");
+                // Provide clear feedback about what went wrong
+                if ($response->exitCode === 124) {
+                    Console::line();
+                    Console::error("  TIMEOUT: Step '{$name}' took longer than {$timeout}s and was stopped.");
+                    Console::line("  This usually means AI got stuck or the task was too complex.");
+                    Console::line("  The step will be retried. If it keeps failing, you can skip it.");
+                } else {
+                    Console::warn("  AI error on '{$name}': {$response->error}");
+                    if ($elapsed > 5) {
+                        Console::line("  (ran for {$elapsedMin} min before failing)");
+                    }
+                }
 
                 return false;
             },
