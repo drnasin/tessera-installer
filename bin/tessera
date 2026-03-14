@@ -63,7 +63,7 @@ $command = $args[0] ?? null;
 // ─── Version ───
 
 if ($command === '--version' || $command === '-v') {
-    Console::line('Tessera Installer v2.3.0');
+    Console::line('Tessera Installer ' . installerVersion());
     exit(0);
 }
 
@@ -171,6 +171,33 @@ function showTools(): void
         Console::line($router->describe());
         Console::line();
     }
+}
+
+function installerVersion(): string
+{
+    // Try git tag first (works in dev and when installed from source)
+    $installerDir = str_replace('\\', '/', dirname(__DIR__));
+    $result = [];
+    $exit = 1;
+    exec('git -C "' . $installerDir . '" describe --tags --abbrev=0 2>&1', $result, $exit);
+
+    if ($exit === 0 && ! empty($result[0])) {
+        return trim($result[0]);
+    }
+
+    // Fallback: check composer installed.json (global install via composer)
+    $installed = dirname(__DIR__, 3) . '/composer/installed.json';
+    if (is_file($installed)) {
+        $data = json_decode((string) file_get_contents($installed), true);
+        $packages = $data['packages'] ?? $data;
+        foreach ($packages as $pkg) {
+            if (($pkg['name'] ?? '') === 'tessera/installer') {
+                return $pkg['version'] ?? 'dev';
+            }
+        }
+    }
+
+    return 'dev';
 }
 
 function showDoctor(): void
