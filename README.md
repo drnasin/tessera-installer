@@ -200,12 +200,28 @@ A single build might use Claude Opus for database architecture, Gemini Flash for
 
 **Rate limit awareness:** If a tool hits rate limits mid-build, Tessera automatically switches to the next available tool+model. No manual intervention needed.
 
-**Customizable:** Set tool preferences via environment variables:
+**Plan-aware:** Tell Tessera about your subscription plans so it knows which tools are free for you:
 ```bash
-# Prefer Gemini over Claude
+# Claude Max = unlimited, use for everything
+TESSERA_CLAUDE_PLAN=max
+
+# ChatGPT Plus = Codex available
+TESSERA_CODEX_PLAN=plus
+
+# Gemini free tier
+TESSERA_GEMINI_PLAN=free
+```
+
+With `TESSERA_CLAUDE_PLAN=max`, Claude is preferred for ALL tasks (even simple ones) since it's unlimited — no reason to route to Gemini Flash when Haiku is free.
+
+Available plans: `max` (unlimited), `pro`/`plus`/`paid` (generous limits), `free` (fallback only).
+
+**Other preferences:**
+```bash
+# Custom tool order (overrides plan-based ordering)
 TESSERA_TOOL_PREFERENCE=gemini,claude,codex
 
-# Never use Codex
+# Never use a specific tool
 TESSERA_TOOL_EXCLUDE=codex
 ```
 
@@ -218,7 +234,8 @@ Available AI tools:
 ✓ codex: 0.98.0
 
 AI routing:
-  simple: gemini (gemini-2.0-flash)
+  plans: claude=max (unlimited), codex=plus (generous), gemini=free (limited)
+  simple: claude (claude-haiku-4-5-20251001)
   medium: claude (claude-sonnet-4-20250514)
   complex: claude (claude-opus-4-20250514)
 ```

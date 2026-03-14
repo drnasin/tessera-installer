@@ -11,9 +11,15 @@ namespace Tessera\Installer;
  * Rate-limited tools are automatically skipped with fallback to alternatives.
  * Usage is tracked per tool+model for summary display.
  *
- * SIMPLE  → Gemini Flash (fastest) > Claude Haiku > Codex
- * MEDIUM  → Claude Sonnet > Gemini Pro > Claude Haiku > Gemini Flash > Codex
- * COMPLEX → Claude Opus > Gemini Pro > Claude Sonnet > Gemini Flash > Codex
+ * Default (no plans set):
+ *   SIMPLE  → Gemini Flash > Claude Haiku > Codex
+ *   MEDIUM  → Claude Sonnet > Gemini Pro > Claude Haiku > Gemini Flash > Codex
+ *   COMPLEX → Claude Opus > Gemini Pro > Claude Sonnet > Gemini Flash > Codex
+ *
+ * With TESSERA_CLAUDE_PLAN=max (unlimited):
+ *   SIMPLE  → Claude Haiku > Gemini Flash > Codex
+ *   MEDIUM  → Claude Sonnet > Gemini Pro > Codex
+ *   COMPLEX → Claude Opus > Gemini Pro > Codex
  */
 final class ToolRouter
 {
@@ -239,6 +245,17 @@ final class ToolRouter
     {
         $lines = [];
 
+        // Show plans if configured
+        $plans = $this->preference->plans();
+        if (! empty($plans)) {
+            $planParts = [];
+            foreach ($plans as $tool => $plan) {
+                $tier = $this->preference->tierFor($tool);
+                $planParts[] = "{$tool}={$plan} ({$tier})";
+            }
+            $lines[] = '  plans: '.implode(', ', $planParts);
+        }
+
         foreach ([Complexity::SIMPLE, Complexity::MEDIUM, Complexity::COMPLEX] as $complexity) {
             $selection = $this->resolve($complexity);
 
@@ -255,6 +272,9 @@ final class ToolRouter
 
     /**
      * Build ordered list of [toolName, model] attempts for a complexity.
+     *
+     * Plan-aware: unlimited tools are preferred for ALL complexity levels
+     * (no reason to use Gemini Flash when Claude Max is unlimited).
      * User preference reorders tools within the chain.
      *
      * @return array<int, array{0: string, 1: ?string}>
@@ -267,7 +287,24 @@ final class ToolRouter
         $attempts = [];
         $seen = [];
 
-        // First pass: add chain entries for preferred tools (in preference order)
+        // First pass: unlimited tools get their best model for this complexity first.
+        // With Claude Max there's no reason to route simple tasks to Gemini Flash.
+        foreach ($preferredOrder as $preferred) {
+            if (! $this->preference->isUnlimited($preferred)) {
+                continue;
+            }
+
+            // Add the complexity-appropriate model for this unlimited tool
+            $model = self::MODEL_MAP[$preferred][$complexity->value] ?? null;
+            $key = $preferred.':'.($model ?? 'null');
+
+            if (! isset($seen[$key])) {
+                $attempts[] = [$preferred, $model];
+                $seen[$key] = true;
+            }
+        }
+
+        // Second pass: add chain entries for preferred tools (in preference order)
         foreach ($preferredOrder as $preferred) {
             foreach ($chain as [$toolName, $model]) {
                 if ($toolName !== $preferred) {
@@ -283,7 +320,7 @@ final class ToolRouter
             }
         }
 
-        // Second pass: add remaining chain entries not yet included
+        // Third pass: add remaining chain entries not yet included
         foreach ($chain as [$toolName, $model]) {
             $key = $toolName.':'.($model ?? 'null');
 
