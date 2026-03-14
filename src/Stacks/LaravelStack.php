@@ -885,19 +885,47 @@ Builder\Block::make('hero')->schema([
     CuratorPicker::make('background_image'),
 ])
 
-IMPORTANT — VERIFY ALL IMPORTS:
-Before using any Filament class, verify the namespace is correct for the INSTALLED Filament version.
-Filament's namespace structure changes between major versions. Check the actual source files in
-vendor/filament/ if you're unsure whether a class is in Filament\Actions, Filament\Tables\Actions, etc.
-A wrong namespace causes a fatal "Class not found" error that breaks the entire admin.
+CRITICAL — FILAMENT 5 NAMESPACE RULES:
+Filament 5 moved many classes to new namespaces. Using old Filament 4 namespaces causes
+fatal "Class not found" errors. These are the CORRECT namespaces — use ONLY these:
 
-Common Filament v5 namespaces (verify against vendor/ if unsure):
-  - Filament\Resources\Resource (base resource class)
+TABLE ACTIONS (moved from Tables\Actions to top-level Actions):
+  - Filament\Actions\EditAction (NOT Filament\Tables\Actions\EditAction)
+  - Filament\Actions\DeleteAction (NOT Filament\Tables\Actions\DeleteAction)
+  - Filament\Actions\CreateAction (NOT Filament\Tables\Actions\CreateAction)
+  - Filament\Actions\BulkActionGroup (NOT Filament\Tables\Actions\BulkActionGroup)
+  - Filament\Actions\DeleteBulkAction (NOT Filament\Tables\Actions\DeleteBulkAction)
+  - Filament\Actions\BulkAction (NOT Filament\Tables\Actions\BulkAction)
+  - Filament\Actions\Action (NOT Filament\Tables\Actions\Action)
+
+LAYOUT COMPONENTS (moved from Forms\Components to Schemas\Components):
+  - Filament\Schemas\Components\Section (NOT Filament\Forms\Components\Section)
+  - Filament\Schemas\Components\Fieldset (NOT Filament\Forms\Components\Fieldset)
+  - Filament\Schemas\Components\Grid (NOT Filament\Forms\Components\Grid)
+  - Filament\Schemas\Components\Group (NOT Filament\Forms\Components\Group)
+  - Filament\Schemas\Components\Tabs (NOT Filament\Forms\Components\Tabs)
+  - Filament\Schemas\Components\Wizard (NOT Filament\Forms\Components\Wizard)
+  - Filament\Schemas\Components\View (NOT Filament\Forms\Components\View)
+
+FORM INPUT COMPONENTS (STAYED in Forms\Components — these are correct):
   - Filament\Forms\Components\TextInput, RichEditor, Select, Toggle, Builder, Repeater
-  - Filament\Tables\Columns\TextColumn, IconColumn, BadgeColumn
-  - Filament\Tables\Actions\EditAction, DeleteAction (NOT Filament\Actions for table actions)
-  - Filament\Schemas\Components\Tabs (NOT Filament\Forms\Components\Tabs in v5)
-  - Awcodes\Curator\Components\Forms\CuratorPicker (NOT Awcodes\Curator\Forms\CuratorPicker)
+  - Filament\Forms\Components\Checkbox, DatePicker, FileUpload, Textarea, ColorPicker
+  - Filament\Forms\Components\Placeholder (stayed in Forms)
+
+TABLE COLUMNS (STAYED in Tables\Columns — these are correct):
+  - Filament\Tables\Columns\TextColumn, IconColumn, BadgeColumn, ToggleColumn, ImageColumn
+
+OTHER:
+  - Filament\Resources\Resource (base resource class)
+  - Filament\Schemas\Schema (NOT Filament\Forms\Form for schema method)
+  - Filament\Tables\Table (table configuration)
+  - Awcodes\Curator\Components\Forms\CuratorPicker
+
+When writing `use` statements, import the TOP-LEVEL namespaces and use short references:
+  use Filament\Actions;        // then Actions\EditAction::make()
+  use Filament\Schemas\Components;  // or import Section directly
+  use Filament\Forms;          // then Forms\Components\TextInput::make()
+  use Filament\Tables;         // then Tables\Columns\TextColumn::make()
 
 YOUR ROLE: You are a senior developer building the admin panel for this project.
 Think about what the admin (site owner / business operator) needs to manage.
@@ -1009,6 +1037,9 @@ PROMPT,
                 timeout: $this->aiTimeout,
             );
             $this->memory->completeStep('admin');
+
+            // Auto-fix Filament 5 namespace issues (AI often uses Filament 4 namespaces)
+            $this->fixFilamentNamespaces();
         } // end if !isStepDone('admin')
 
         // Step D: Content & pages
@@ -1461,6 +1492,58 @@ final class TranslatableFields
     }
 }
 HELPER);
+    }
+
+    /**
+     * Fix Filament 5 namespace issues in generated code.
+     * AI models often use Filament 4 namespaces despite being instructed otherwise.
+     */
+    private function fixFilamentNamespaces(): void
+    {
+        $filamentDir = $this->fullPath.'/app/Filament';
+
+        if (! is_dir($filamentDir)) {
+            return;
+        }
+
+        // Filament 5 namespace changes
+        $replacements = [
+            // Table actions moved from Tables\Actions to top-level Actions
+            'Tables\\Actions\\' => '\\Filament\\Actions\\',
+            // Layout components moved from Forms\Components to Schemas\Components
+            'Forms\\Components\\Section' => '\\Filament\\Schemas\\Components\\Section',
+            'Forms\\Components\\Fieldset' => '\\Filament\\Schemas\\Components\\Fieldset',
+            'Forms\\Components\\Grid' => '\\Filament\\Schemas\\Components\\Grid',
+            'Forms\\Components\\Group' => '\\Filament\\Schemas\\Components\\Group',
+            'Forms\\Components\\Tabs' => '\\Filament\\Schemas\\Components\\Tabs',
+            'Forms\\Components\\Wizard' => '\\Filament\\Schemas\\Components\\Wizard',
+            'Forms\\Components\\View' => '\\Filament\\Schemas\\Components\\View',
+        ];
+
+        $rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($filamentDir));
+        $fixed = 0;
+
+        foreach ($rii as $file) {
+            if ($file->isDir() || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $content = (string) file_get_contents($file->getPathname());
+            $original = $content;
+
+            foreach ($replacements as $old => $new) {
+                $content = str_replace($old, $new, $content);
+            }
+
+            if ($content !== $original) {
+                file_put_contents($file->getPathname(), $content);
+                $fixed++;
+            }
+        }
+
+        if ($fixed > 0) {
+            Console::warn("  Auto-fixed Filament 5 namespaces in {$fixed} files");
+        }
     }
 
     /**
