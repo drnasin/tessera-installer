@@ -858,6 +858,18 @@ SELF-CHECK — After creating each page/component, mentally render it and verify
 - Are loading states handled? (wire:loading for Livewire, spinners for async actions)
 - Are empty states handled? (empty cart, no search results, no orders yet)
 - Are error states handled? (form validation, payment failure, 404 pages)
+
+INTEGRATION CHECK — Your code does NOT exist in isolation. Other AI steps already created
+middleware, routes, models, and services. Your views and components must match what already exists.
+Before finishing, verify these connections:
+- If you use a query parameter (?locale=, ?sort=, ?page=), READ the middleware or controller
+  that handles it. Use the SAME parameter name — don't guess, check the actual source file.
+- If you reference a route name (route('shop.cart')), run: grep -r "->name(" routes/ to verify it exists.
+- If you call a Livewire component (<livewire:cart-widget />), verify the class exists in app/Livewire/.
+- If you use a helper (curator_url(), active_page()), verify it exists in app/Core/helpers.php.
+- If you link to a URL (/shop, /admin), verify the route is defined.
+- If you use a config value (config('platform.supported_locales')), verify the config file has that key.
+Rule: NEVER assume another part of the codebase uses a specific name — READ IT and match it exactly.
 If ANY answer is "no" — fix it before moving on.
 PROMPT,
                 verify: function (): ?string {
@@ -1007,6 +1019,16 @@ PRINCIPLES:
   If the admin cannot change it without a developer, it's a bug.
 - If you're unsure whether the admin needs a particular feature — they do.
   A good admin panel is COMPLETE. The admin should never need to touch code or config files.
+
+INTEGRATION CHECK — Your code does NOT exist in isolation. Other AI steps already created
+models, middleware, routes, services, and theme views. Your admin resources must match them.
+Before finishing, verify:
+- Every model you create a Resource for actually EXISTS in app/. Read the model file first.
+- Column names in your table() match the ACTUAL database migration column names — read the migration.
+- If the theme uses specific block data keys (e.g., \$block->data['heading']), your Builder
+  form fields MUST use those EXACT keys. Read the blade views in resources/views/themes/default/blocks/.
+- If you reference a relationship in the resource, verify it exists on the model.
+Rule: NEVER assume a column, relationship, or key name — READ the source file and match it exactly.
 PROMPT,
                 verify: function (): ?string {
                     // Check for any Resource file in Filament dir
