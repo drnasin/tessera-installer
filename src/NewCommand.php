@@ -181,10 +181,10 @@ final class NewCommand
                 }
 
                 if ($choice === 0) {
-                    // Resume with saved requirements
+                    // Resume with saved requirements — skip stack selection
                     Console::success('Resuming previous installation...');
 
-                    return $this->buildProject($state['requirements']);
+                    return $this->buildProject($state['requirements'], $state['stack'] ?? null);
                 }
 
                 // Choice 1: start fresh — fall through to remove directory
@@ -210,24 +210,37 @@ final class NewCommand
      *
      * @param  array<string, mixed>  $requirements
      */
-    private function buildProject(array $requirements): int
+    private function buildProject(array $requirements, ?string $resumeStack = null): int
     {
-        // Decide technology stack
-        $stack = $this->decideStack($requirements);
+        // On resume, use the saved stack — no need to ask AI again
+        if ($resumeStack !== null) {
+            $stack = StackRegistry::get($resumeStack);
+
+            if ($stack === null) {
+                Console::warn("Saved stack '{$resumeStack}' not found. Re-detecting...");
+                $stack = $this->decideStack($requirements);
+            }
+        } else {
+            $stack = $this->decideStack($requirements);
+        }
 
         if ($stack === null) {
             return 1;
         }
 
-        // Confirm with junior
-        Console::line();
-        Console::bold("AI recommends: {$stack->label()}");
-        Console::line();
+        // Only ask for confirmation on fresh installs
+        if ($resumeStack === null) {
+            Console::line();
+            Console::bold("AI recommends: {$stack->label()}");
+            Console::line();
 
-        if (! Console::confirm('Continue?')) {
-            Console::warn('Cancelled.');
+            if (! Console::confirm('Continue?')) {
+                Console::warn('Cancelled.');
 
-            return 0;
+                return 0;
+            }
+        } else {
+            Console::line("  Resuming with: {$stack->label()}");
         }
 
         // Check stack prerequisites — auto-install if missing

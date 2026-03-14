@@ -35,12 +35,11 @@ final class StepRunner
     /**
      * Run a step with full error recovery.
      *
-     * @param string        $name       Step display name
-     * @param callable      $execute    fn(): bool — runs the step
-     * @param callable|null $verify     fn(): string|null — returns null if OK, error message if not
-     * @param bool          $skippable  Can this step be skipped?
-     * @param string|null   $fixHint    Human-readable hint for manual fix
-     *
+     * @param  string  $name  Step display name
+     * @param  callable  $execute  fn(): bool — runs the step
+     * @param  callable|null  $verify  fn(): string|null — returns null if OK, error message if not
+     * @param  bool  $skippable  Can this step be skipped?
+     * @param  string|null  $fixHint  Human-readable hint for manual fix
      * @return bool True if step succeeded (or was skipped), false if fatal.
      */
     public function run(
@@ -111,7 +110,7 @@ final class StepRunner
     /**
      * Install packages one by one, retrying failures individually.
      *
-     * @param array<string> $packages
+     * @param  array<string>  $packages
      */
     public function installPackages(string $name, array $packages, bool $dev = false): bool
     {
@@ -168,8 +167,8 @@ final class StepRunner
             Console::spinner("  AI fixing {$fail['package']}...");
 
             $fixPrompt = "composer require{$devFlag} {$fail['package']} failed with error:\n{$fail['error']}\n\n"
-                . "Fix the issue and install the package. Working directory: {$this->workingDir}\n"
-                . "If the package doesn't exist or is incompatible, find an alternative or skip it.";
+                ."Fix the issue and install the package. Working directory: {$this->workingDir}\n"
+                ."If the package doesn't exist or is incompatible, find an alternative or skip it.";
 
             $selection = $this->router->resolve(Complexity::SIMPLE);
             $response = $selection->tool->execute($fixPrompt, $this->workingDir, 120, $selection->model);
@@ -197,7 +196,7 @@ final class StepRunner
 
         // Still have failures — ask user
         $failedNames = array_column($failed, 'package');
-        Console::warn('  Could not install: ' . implode(', ', $failedNames));
+        Console::warn('  Could not install: '.implode(', ', $failedNames));
 
         $instructions = "Try installing manually:\n";
         foreach ($failed as $fail) {
@@ -241,7 +240,7 @@ final class StepRunner
                     // Show AI output (trimmed)
                     $output = $response->output;
                     if (strlen($output) > 500) {
-                        $output = substr($output, 0, 500) . '...';
+                        $output = substr($output, 0, 500).'...';
                     }
                     if ($output !== '') {
                         Console::line("  {$output}");
@@ -258,8 +257,8 @@ final class StepRunner
                 if ($response->exitCode === 124) {
                     Console::line();
                     Console::error("  TIMEOUT: Step '{$name}' took longer than {$timeout}s and was stopped.");
-                    Console::line("  This usually means AI got stuck or the task was too complex.");
-                    Console::line("  The step will be retried. If it keeps failing, you can skip it.");
+                    Console::line('  This usually means AI got stuck or the task was too complex.');
+                    Console::line('  The step will be retried. If it keeps failing, you can skip it.');
                 } else {
                     Console::warn("  AI error on '{$name}': {$response->error}");
                     if ($elapsed > 5) {
@@ -333,8 +332,8 @@ final class StepRunner
     private function aiFix(string $stepName, string $error, ?string $hint): bool
     {
         $prompt = "Step '{$stepName}' failed with error:\n{$error}\n\n"
-            . "Working directory: {$this->workingDir}\n"
-            . "Fix the issue so the step can succeed.\n";
+            ."Working directory: {$this->workingDir}\n"
+            ."Fix the issue so the step can succeed.\n";
 
         if ($hint) {
             $prompt .= "Hint: {$hint}\n";
@@ -344,6 +343,10 @@ final class StepRunner
         $selection = $this->router->resolve(Complexity::SIMPLE);
         Console::line("  Fix using: {$selection->tool->name()}");
         $response = $selection->tool->execute($prompt, $this->workingDir, 120, $selection->model);
+
+        if (! $response->success && $response->error) {
+            Console::warn("  AI fix failed: {$response->error}");
+        }
 
         return $response->success;
     }
@@ -359,7 +362,7 @@ final class StepRunner
         bool $skippable,
         ?string $fixHint,
     ): bool {
-        $instructions = $fixHint ?? "Fix the error and try again.";
+        $instructions = $fixHint ?? 'Fix the error and try again.';
 
         return $this->askUserToFix($name, $instructions, $execute, $verify, $skippable);
     }
@@ -384,6 +387,7 @@ final class StepRunner
 
         Console::line();
         Console::warn("AI couldn't fix: {$name}");
+        Console::warn("Error: {$error}");
         Console::line();
         Console::bold('Please fix manually:');
         Console::line($instructions);

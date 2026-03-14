@@ -170,8 +170,8 @@ final class LaravelStack implements StackInterface
 
         // Step 5b: Configure database
         Console::spinner('Configuring database...');
-        $this->configureDatabase();
-        Console::success('Database configured: '.($this->requirements['database'] ?? 'sqlite'));
+        $actualDb = $this->configureDatabase();
+        Console::success("Database configured: {$actualDb}");
 
         // Step 6: AI builds everything
         Console::line();
@@ -1466,63 +1466,117 @@ HELPER);
     /**
      * Configure the database in .env based on requirements.
      */
-    private function configureDatabase(): void
+    private function configureDatabase(): string
     {
         $db = $this->requirements['database'] ?? 'sqlite';
         $envFile = $this->fullPath.'/.env';
 
         if (! is_file($envFile)) {
-            return;
+            return 'sqlite';
         }
 
         $env = (string) file_get_contents($envFile);
         $projectName = basename($this->fullPath);
 
+        if ($db !== 'sqlite') {
+            $connected = $this->configureDatabaseServer($db, $env, $projectName);
+
+            if (! $connected) {
+                Console::warn('Falling back to SQLite — installation will continue without issues.');
+                $db = 'sqlite';
+                // Re-read env in case it was partially written
+                $env = (string) file_get_contents($envFile);
+            }
+        }
+
         if ($db === 'sqlite') {
-            // Laravel default — ensure DB_CONNECTION=sqlite
             $env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=sqlite', $env);
-            // Remove MySQL-specific lines if present
             $env = preg_replace('/^DB_HOST=.*\n?/m', '', $env);
             $env = preg_replace('/^DB_PORT=.*\n?/m', '', $env);
             $env = preg_replace('/^DB_DATABASE=(?!.*database\.sqlite).*\n?/m', '', $env);
             $env = preg_replace('/^DB_USERNAME=.*\n?/m', '', $env);
             $env = preg_replace('/^DB_PASSWORD=.*\n?/m', '', $env);
-        } elseif (in_array($db, ['mysql', 'mariadb'], true)) {
-            $env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=mysql', $env);
-            $env = preg_replace('/^DB_HOST=.*/m', 'DB_HOST=127.0.0.1', $env);
-            $env = preg_replace('/^DB_PORT=.*/m', 'DB_PORT=3306', $env);
-            $env = preg_replace('/^DB_DATABASE=.*/m', "DB_DATABASE={$projectName}", $env);
-            $env = preg_replace('/^DB_USERNAME=.*/m', 'DB_USERNAME=root', $env);
-            $env = preg_replace('/^DB_PASSWORD=.*/m', 'DB_PASSWORD=', $env);
-
-            // If these lines don't exist, add them after DB_CONNECTION
-            if (! preg_match('/^DB_HOST=/m', $env)) {
-                $env = preg_replace('/^(DB_CONNECTION=.*)$/m', "$1\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE={$projectName}\nDB_USERNAME=root\nDB_PASSWORD=", $env);
-            }
-
-            // Try to create the database
-            $createCmd = $db === 'mariadb'
-                ? "mariadb -u root -e \"CREATE DATABASE IF NOT EXISTS \\`{$projectName}\\`;\""
-                : "mysql -u root -e \"CREATE DATABASE IF NOT EXISTS \\`{$projectName}\\`;\"";
-
-            Console::execSilent($createCmd, $this->fullPath);
-        } elseif ($db === 'postgresql') {
-            $env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=pgsql', $env);
-            $env = preg_replace('/^DB_HOST=.*/m', 'DB_HOST=127.0.0.1', $env);
-            $env = preg_replace('/^DB_PORT=.*/m', 'DB_PORT=5432', $env);
-            $env = preg_replace('/^DB_DATABASE=.*/m', "DB_DATABASE={$projectName}", $env);
-            $env = preg_replace('/^DB_USERNAME=.*/m', 'DB_USERNAME=postgres', $env);
-            $env = preg_replace('/^DB_PASSWORD=.*/m', 'DB_PASSWORD=', $env);
-
-            if (! preg_match('/^DB_HOST=/m', $env)) {
-                $env = preg_replace('/^(DB_CONNECTION=.*)$/m', "$1\nDB_HOST=127.0.0.1\nDB_PORT=5432\nDB_DATABASE={$projectName}\nDB_USERNAME=postgres\nDB_PASSWORD=", $env);
-            }
-
-            // Try to create the database
-            Console::execSilent("createdb {$projectName} 2>/dev/null", $this->fullPath);
         }
 
         file_put_contents($envFile, $env);
+
+        return $db;
+    }
+
+    /**
+     * Ask for credentials and try to connect to MySQL/MariaDB or PostgreSQL.
+     * Returns true if connection succeeded, false if it failed.
+     * On success, writes credentials to $env (passed by reference).
+     */
+    private function configureDatabaseServer(string $db, string &$env, string $projectName): bool
+    {
+        $isPostgres = $db === 'postgresql';
+        $label = $isPostgres ? 'PostgreSQL' : 'MySQL/MariaDB';
+        $defaultUser = $isPostgres ? 'postgres' : 'root';
+        $defaultPort = $isPostgres ? '5432' : '3306';
+        $connection = $isPostgres ? 'pgsql' : 'mysql';
+
+        Console::line();
+        Console::bold("{$label} credentials:");
+        $dbHost = Console::ask('Database host', '127.0.0.1');
+        $dbPort = Console::ask('Database port', $defaultPort);
+        $dbUser = Console::ask('Database username', $defaultUser);
+        $dbPass = Console::ask('Database password (leave empty for none)', '');
+        $dbName = Console::ask('Database name', $projectName);
+
+        // Test connection first
+        if ($isPostgres) {
+            $pgEnv = $dbPass !== '' ? "PGPASSWORD={$dbPass} " : '';
+            $testCmd = "{$pgEnv}psql -h {$dbHost} -p {$dbPort} -U {$dbUser} -c \"SELECT 1;\" 2>&1";
+        } else {
+            $passFlag = $dbPass !== '' ? " -p{$dbPass}" : '';
+            $cli = $db === 'mariadb' ? 'mariadb' : 'mysql';
+            $testCmd = "{$cli} -u {$dbUser}{$passFlag} -h {$dbHost} -P {$dbPort} -e \"SELECT 1;\" 2>&1";
+        }
+
+        $result = Console::execSilent($testCmd, $this->fullPath);
+
+        if ($result['exit'] !== 0) {
+            Console::line();
+            Console::warn("Could not connect to {$label}: {$result['output']}");
+
+            if (Console::confirm('Retry with different credentials?', true)) {
+                return $this->configureDatabaseServer($db, $env, $projectName);
+            }
+
+            return false;
+        }
+
+        // Connection works — write credentials to env
+        $env = preg_replace('/^DB_CONNECTION=.*/m', "DB_CONNECTION={$connection}", $env);
+        $env = preg_replace('/^DB_HOST=.*/m', "DB_HOST={$dbHost}", $env);
+        $env = preg_replace('/^DB_PORT=.*/m', "DB_PORT={$dbPort}", $env);
+        $env = preg_replace('/^DB_DATABASE=.*/m', "DB_DATABASE={$dbName}", $env);
+        $env = preg_replace('/^DB_USERNAME=.*/m', "DB_USERNAME={$dbUser}", $env);
+        $env = preg_replace('/^DB_PASSWORD=.*/m', "DB_PASSWORD={$dbPass}", $env);
+
+        if (! preg_match('/^DB_HOST=/m', $env)) {
+            $env = preg_replace('/^(DB_CONNECTION=.*)$/m', "$1\nDB_HOST={$dbHost}\nDB_PORT={$dbPort}\nDB_DATABASE={$dbName}\nDB_USERNAME={$dbUser}\nDB_PASSWORD={$dbPass}", $env);
+        }
+
+        // Try to create the database
+        if ($isPostgres) {
+            $pgEnv = $dbPass !== '' ? "PGPASSWORD={$dbPass} " : '';
+            $createResult = Console::execSilent("{$pgEnv}createdb -h {$dbHost} -p {$dbPort} -U {$dbUser} {$dbName} 2>&1", $this->fullPath);
+        } else {
+            $passFlag = $dbPass !== '' ? " -p{$dbPass}" : '';
+            $cli = $db === 'mariadb' ? 'mariadb' : 'mysql';
+            $createResult = Console::execSilent("{$cli} -u {$dbUser}{$passFlag} -h {$dbHost} -P {$dbPort} -e \"CREATE DATABASE IF NOT EXISTS \\`{$dbName}\\`;\"", $this->fullPath);
+        }
+
+        if ($createResult['exit'] !== 0) {
+            Console::warn("Connected but could not create database: {$createResult['output']}");
+            Console::line("Please create the '{$dbName}' database manually.");
+        } else {
+            Console::success("Database '{$dbName}' ready");
+        }
+
+        return true;
     }
 
     /**
