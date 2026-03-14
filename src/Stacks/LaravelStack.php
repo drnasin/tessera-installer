@@ -579,6 +579,15 @@ Before creating anything, reason about what this project needs:
 - Does it need categories/tags? Search? Filtering?
 - What relationships exist between entities?
 
+GOLDEN RULE — NEVER HARDCODE BUSINESS VALUES:
+All business-configurable values (prices, rates, thresholds, zones, labels, tax rates, etc.)
+must be stored in the DATABASE and administrable via the Filament admin panel.
+Config files (config/*.php) are for TECHNICAL settings only (DB, cache, queue, API keys).
+The seeder populates sensible defaults so the app works out of the box, but every value
+must be changeable by the admin without touching code or config files.
+If you find yourself writing a number, price, percentage, or label in a config file or
+a hardcoded array — STOP. That belongs in a database table with an admin CRUD.
+
 STEP 2 — ALWAYS CREATE (every Tessera project has these):
 1. CORE MODELS in app/Core/Models/:
    - Page.php (title, slug, meta_title, meta_description, og_image, is_published, published_at)
@@ -638,12 +647,32 @@ VERIFICATION PRINCIPLES (apply throughout):
   Use either: `->layout('layouts.shop')` in render(), or `#[Layout('layouts.shop')]` attribute on the class.
 
 STEP 3 — IF E-COMMERCE ({$shop}):
+Think like an E-COMMERCE EXPERT. Follow industry standards for online shops.
+A shop is not just products + cart — it's a complete system with user accounts, order management,
+shipping configuration, tax handling, and payment processing. Build ALL of it.
+
 Create a full shop module in app/Modules/Shop/:
-- Models: Product, ProductVariant, Category, Cart, CartItem, Order, OrderItem, Coupon
-- Enums: OrderStatus, PaymentStatus, CouponType
+
+MODELS:
+- Product, ProductVariant, Category, Cart, CartItem, Order, OrderItem, Coupon
+- ShippingZone — ALL shipping configuration must be in the DATABASE, not config files:
+  * name (string, e.g. "Zagreb", "Hrvatska", "EU")
+  * countries (JSON array of country codes, e.g. ["HR"])
+  * postal_code_from / postal_code_to (nullable int — for sub-country zones like Zagreb 10000-10999)
+  * base_cost (int, cents), per_kg_cost (int, cents)
+  * free_shipping_threshold (nullable int, cents — null means never free)
+  * is_active (bool), sort_order (int)
+  The ShippingCalculator reads zones from DB, matches by postal code ranges first, then by country.
+  Admin can add/edit/delete zones, change prices, set free shipping thresholds — NO code changes needed.
+- ShopSetting — key/value store for shop-wide settings (tax_rate, currency, etc.)
+  Administrable via Filament. Cached. Helper: shop_setting('tax_rate', 25)
+
+ENUMS: OrderStatus, PaymentStatus, CouponType
+
+PAYMENT GATEWAYS:
 - PaymentGateway interface in Payments/ with implementations for: {$payments}
   Each gateway must have: charge(), refund(), webhookHandler(), getConfigKeys()
-  getConfigKeys() returns array of .env keys needed
+  getConfigKeys() returns array of .env keys needed (API keys come from .env, not DB)
   PAYMENT GATEWAY PATTERN: There are two common payment flows — understand which to use:
     a) REDIRECT gateways (CorvusPay, PayPal, etc.): charge() builds form data + signature,
        returns a redirect URL. The customer is sent to the provider's hosted page.
@@ -651,21 +680,47 @@ Create a full shop module in app/Modules/Shop/:
     b) API gateways (Stripe, Mollie, etc.): charge() calls an API, creates a PaymentIntent/session,
        returns a client secret or redirect URL. Needs: webhook route for payment confirmation.
   charge() must return a PaymentResult DTO with: success, redirectUrl, transactionId, error.
-- ShippingCalculator interface + zone-based implementation
-  Must include zoneFromPostalCode(string \$postalCode): string method that auto-detects
-  shipping zone from postal code instead of requiring users to manually select a zone.
-- Livewire components: ProductCard, ProductFilter, CartWidget, CartPage, Checkout, AddToCart
+
+SHIPPING:
+- ShippingCalculator interface + DB-driven implementation (reads ShippingZone model)
+  Must include zoneFromPostalCode(string \$postalCode): string method that matches
+  postal code against ShippingZone ranges. Falls back to country matching if no postal range matches.
+  NEVER hardcode postal code ranges or prices in PHP code or config files.
+
+USER ACCOUNTS (CRITICAL — e-commerce REQUIRES user functionality):
+- Registration page (name, email, password, password confirmation)
+- Login page (email, password, remember me)
+- Password reset flow (forgot password → email → reset form)
+- User profile page (edit name, email, change password)
+- Order history page (list of past orders with status, date, total)
+- Order detail page (items, shipping info, payment status, tracking)
+- Address book (saved shipping/billing addresses, set default, reuse at checkout)
+- Guest checkout must ALSO work — checkout allows both logged-in users and guests.
+  For guests: collect email, offer "create account" checkbox at checkout.
+  For logged-in users: pre-fill from profile, save address to address book.
+Use Laravel's built-in Auth scaffolding where possible. Create Livewire components for:
+  - Auth views in resources/views/auth/ (login, register, forgot-password, reset-password)
+  - Profile page, order history, order detail, address book
+These are standard e-commerce features — every online shop has them.
+
+LIVEWIRE COMPONENTS:
+- ProductCard, ProductFilter, CartWidget, CartPage, Checkout, AddToCart
   - AddToCart: variant selector, quantity +/- buttons, add-to-cart button (for product detail page)
   - CartPage: full cart view with quantity editing, coupon, postal code for shipping estimate
   - Checkout: shipping/billing forms, payment method selection, order summary
+    Pre-fill from user profile/address book if logged in.
   - ProductFilter: category filter, price range, sorting (for product listing page)
 - PRODUCT DETAIL PAGE: Create a product detail view (show single product with images,
   description, variants, price, and the AddToCart Livewire component). This is NOT a Livewire
   full-page component — it's a Blade view with an embedded AddToCart component.
   Route: /shop/product/{product:slug}
-- Shop routes in routes/shop.php (products, cart, checkout, webhooks, product detail)
-- config/shop.php (currency, tax_rate, shipping_zones, payment providers, free_shipping_threshold)
-- ShopSeeder with realistic sample data for THIS business type
+- Shop routes in routes/shop.php (products, cart, checkout, webhooks, product detail, auth, profile, orders)
+- config/shop.php — ONLY technical settings: payment provider class mappings, .env key references.
+  NO prices, NO zone definitions, NO tax rates — those go in ShopSetting / ShippingZone DB tables.
+- ShopSeeder with realistic sample data for THIS business type:
+  * Default shipping zones with sensible prices for the target country
+  * Default shop settings (tax_rate, currency, etc.)
+  * Sample products, categories, coupons
 - ShopServiceProvider registered in bootstrap/providers.php
   CRITICAL: Livewire components in non-standard namespaces (like App\Modules\Shop\Livewire)
   must be MANUALLY REGISTERED in the ServiceProvider boot() method:
@@ -684,6 +739,11 @@ IMPORTANT:
 - Database migrations must be compatible with BOTH SQLite and MySQL/PostgreSQL:
   Do NOT use MySQL-specific syntax (e.g., ->unsigned() on non-integer columns, ENUM columns).
   Use Laravel's column types which abstract DB differences.
+- NEVER hardcode business values (prices, tax rates, zone names, thresholds, labels) in:
+  * PHP classes (no hardcoded arrays of zones/prices)
+  * Config files (config/*.php is for technical settings only)
+  * Blade views (no hardcoded currency symbols or rates)
+  ALL business values → database tables → admin panel → seeder for defaults.
 PROMPT,
                 verify: function (): ?string {
                     if (! is_file($this->fullPath.'/app/Core/Models/Page.php')) {
@@ -777,6 +837,15 @@ CREATE:
    Full-page Livewire shop components (CartPage, Checkout) MUST declare their layout:
      return view('shop.livewire.checkout', [...])->layout('layouts.shop');
    Without this, they render as raw HTML fragments without <html>, <head>, or any styling.
+
+   AUTH & USER PAGES — Create styled views for all user account pages:
+   - resources/views/auth/ — login, register, forgot-password, reset-password
+   - resources/views/shop/profile.blade.php — user profile (edit name, email, password)
+   - resources/views/shop/orders.blade.php — order history list
+   - resources/views/shop/order-detail.blade.php — single order view
+   - resources/views/shop/addresses.blade.php — saved addresses management
+   All auth/account pages must use the shop layout and match the site's visual style.
+   Header should show login/register links for guests, and profile/orders/logout for logged-in users.
 
 4. Routing: catch-all /{slug?} in bootstrap/app.php (AFTER Filament routes, in 'then:' callback)
    NEVER use Route::get('/{slug?}', function() {}) — use controller syntax.
@@ -908,6 +977,11 @@ CREATE:
    - CategoryResource — name, slug, parent, order
    - OrderResource — read-only list with status filters, order details, customer info
    - CouponResource — code, type (percent/fixed), value, valid dates, usage limits
+   - ShippingZoneResource — CRUD for shipping zones: name, countries, postal code ranges,
+     base_cost, per_kg_cost, free_shipping_threshold, is_active, sort_order.
+     Admin must be able to fully manage shipping zones and prices without touching code.
+   - ShopSettingResource (or a Filament custom page) — manage shop-wide settings:
+     tax_rate, currency, shop_name, etc. Key-value pairs, all editable by admin.
 
 3. Register CuratorPlugin in AdminPanelProvider (if not already done)
 
@@ -998,7 +1072,14 @@ CREATE:
    - FAQ questions must be ones a real customer would ask
    - Testimonials must sound genuine (use realistic names for the country/culture)
 
-3. IF E-COMMERCE: also seed categories, sample products with realistic names/prices/descriptions
+3. IF E-COMMERCE: also seed:
+   - Categories with realistic names for THIS business type
+   - Sample products with realistic names, prices, descriptions, variants
+   - Shipping zones appropriate for the target country ({$country}):
+     e.g., for Croatia: "Zagreb" (10000-10999), "Hrvatska" (rest of HR), "EU", "Svijet"
+     with realistic base costs, per-kg costs, and free shipping thresholds
+   - Default shop settings (tax_rate for the country, currency, shop name)
+   - Sample coupons (percent and fixed amount)
 
 4. Run: php artisan migrate --force && php artisan db:seed --force
 
@@ -1174,7 +1255,12 @@ SETUP.md must include:
    - [ ] Set up SSL certificate
    - [ ] Configure backups
 
-7. COMMON TASKS
+7. SHIPPING & SETTINGS MANAGEMENT (if e-commerce)
+   - How to add/edit shipping zones in the admin panel
+   - How to change tax rate, currency, free shipping threshold
+   - Explain that ALL these values are managed in admin — no code changes needed
+
+8. COMMON TASKS
    - How to add a new page (admin panel)
    - How to add a new block type (create blade view + add to BlockRegistry + add to PageResource builder)
    - How to change the theme/colors
