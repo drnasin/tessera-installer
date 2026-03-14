@@ -647,103 +647,41 @@ VERIFICATION PRINCIPLES (apply throughout):
   Use either: `->layout('layouts.shop')` in render(), or `#[Layout('layouts.shop')]` attribute on the class.
 
 STEP 3 — IF E-COMMERCE ({$shop}):
-Think like an E-COMMERCE EXPERT. Follow industry standards for online shops.
-A shop is not just products + cart — it's a complete system with user accounts, order management,
-shipping configuration, tax handling, and payment processing. Build ALL of it.
+You are an E-COMMERCE EXPERT building a real online shop. Think like one.
 
-Create a full shop module in app/Modules/Shop/:
+Before writing any code, visit any professional e-commerce site mentally and ask:
+"What can a CUSTOMER do?" — Browse, search, filter, view product details, add to cart,
+manage their account, checkout, pay, track orders, reorder. Build the complete customer journey.
+"What can a SHOP OWNER do?" — Manage everything through the admin panel. If they can't
+change something without a developer, that's a bug.
 
-MODELS:
-- Product, ProductVariant, Category, Cart, CartItem, Order, OrderItem, Coupon
-- ShippingZone — ALL shipping configuration must be in the DATABASE, not config files:
-  * name (string, e.g. "Zagreb", "Hrvatska", "EU")
-  * countries (JSON array of country codes, e.g. ["HR"])
-  * postal_code_from / postal_code_to (nullable int — for sub-country zones like Zagreb 10000-10999)
-  * base_cost (int, cents), per_kg_cost (int, cents)
-  * free_shipping_threshold (nullable int, cents — null means never free)
-  * is_active (bool), sort_order (int)
-  The ShippingCalculator reads zones from DB, matches by postal code ranges first, then by country.
-  Admin can add/edit/delete zones, change prices, set free shipping thresholds — NO code changes needed.
-- ShopSetting — key/value store for shop-wide settings (tax_rate, currency, etc.)
-  Administrable via Filament. Cached. Helper: shop_setting('tax_rate', 25)
+Create a full shop module in app/Modules/Shop/.
+YOU decide what models, enums, services, and components this business needs.
+You're a senior developer — think it through. If you're unsure, err on the side of completeness.
 
-ENUMS: OrderStatus, PaymentStatus, CouponType
+PAYMENT PROVIDERS: {$payments}
+Study how each provider works (redirect-based vs API-based) and implement accordingly.
+API keys come from .env. Each gateway needs getConfigKeys() so the developer knows what to set up.
 
-PAYMENT GATEWAYS:
-- PaymentGateway interface in Payments/ with implementations for: {$payments}
-  Each gateway must have: charge(), refund(), webhookHandler(), getConfigKeys()
-  getConfigKeys() returns array of .env keys needed (API keys come from .env, not DB)
-  PAYMENT GATEWAY PATTERN: There are two common payment flows — understand which to use:
-    a) REDIRECT gateways (CorvusPay, PayPal, etc.): charge() builds form data + signature,
-       returns a redirect URL. The customer is sent to the provider's hosted page.
-       Needs: success/cancel callback routes + webhook route for async notifications.
-    b) API gateways (Stripe, Mollie, etc.): charge() calls an API, creates a PaymentIntent/session,
-       returns a client secret or redirect URL. Needs: webhook route for payment confirmation.
-  charge() must return a PaymentResult DTO with: success, redirectUrl, transactionId, error.
-
-SHIPPING:
-- ShippingCalculator interface + DB-driven implementation (reads ShippingZone model)
-  Must include zoneFromPostalCode(string \$postalCode): string method that matches
-  postal code against ShippingZone ranges. Falls back to country matching if no postal range matches.
-  NEVER hardcode postal code ranges or prices in PHP code or config files.
-
-USER ACCOUNTS (CRITICAL — e-commerce REQUIRES user functionality):
-- Registration page (name, email, password, password confirmation)
-- Login page (email, password, remember me)
-- Password reset flow (forgot password → email → reset form)
-- User profile page (edit name, email, change password)
-- Order history page (list of past orders with status, date, total)
-- Order detail page (items, shipping info, payment status, tracking)
-- Address book (saved shipping/billing addresses, set default, reuse at checkout)
-- Guest checkout must ALSO work — checkout allows both logged-in users and guests.
-  For guests: collect email, offer "create account" checkbox at checkout.
-  For logged-in users: pre-fill from profile, save address to address book.
-Use Laravel's built-in Auth scaffolding where possible. Create Livewire components for:
-  - Auth views in resources/views/auth/ (login, register, forgot-password, reset-password)
-  - Profile page, order history, order detail, address book
-These are standard e-commerce features — every online shop has them.
-
-LIVEWIRE COMPONENTS:
-- ProductCard, ProductFilter, CartWidget, CartPage, Checkout, AddToCart
-  - AddToCart: variant selector, quantity +/- buttons, add-to-cart button (for product detail page)
-  - CartPage: full cart view with quantity editing, coupon, postal code for shipping estimate
-  - Checkout: shipping/billing forms, payment method selection, order summary
-    Pre-fill from user profile/address book if logged in.
-  - ProductFilter: category filter, price range, sorting (for product listing page)
-- PRODUCT DETAIL PAGE: Create a product detail view (show single product with images,
-  description, variants, price, and the AddToCart Livewire component). This is NOT a Livewire
-  full-page component — it's a Blade view with an embedded AddToCart component.
-  Route: /shop/product/{product:slug}
-- Shop routes in routes/shop.php (products, cart, checkout, webhooks, product detail, auth, profile, orders)
-- config/shop.php — ONLY technical settings: payment provider class mappings, .env key references.
-  NO prices, NO zone definitions, NO tax rates — those go in ShopSetting / ShippingZone DB tables.
-- ShopSeeder with realistic sample data for THIS business type:
-  * Default shipping zones with sensible prices for the target country
-  * Default shop settings (tax_rate, currency, etc.)
-  * Sample products, categories, coupons
-- ShopServiceProvider registered in bootstrap/providers.php
-  CRITICAL: Livewire components in non-standard namespaces (like App\Modules\Shop\Livewire)
-  must be MANUALLY REGISTERED in the ServiceProvider boot() method:
-    Livewire::component('shop.cart-widget', CartWidget::class);
-    Livewire::component('shop.cart-page', CartPage::class);
-    Livewire::component('shop.checkout', Checkout::class);
-    Livewire::component('shop.add-to-cart', AddToCart::class);
-    Livewire::component('shop.product-filter', ProductFilter::class);
-  Without this, Livewire cannot find the components and throws "Unable to find component" errors.
+THREE ABSOLUTE RULES:
+1. USER ACCOUNTS — Every e-commerce site has user accounts. Registration, login, profile,
+   order history, saved addresses. Guest checkout must also work. Think about what features
+   any professional online shop offers to its registered users. Build ALL of them.
+2. NOTHING HARDCODED — ALL business values (prices, shipping zones, tax rates, thresholds,
+   currency, zone names, postal code ranges) must be in the DATABASE, manageable via admin.
+   config/shop.php is ONLY for technical settings (class mappings, .env key names).
+   If you find yourself writing a price, rate, or label in PHP code or a config file — STOP.
+   That value belongs in a database table with an admin CRUD and a seeder for defaults.
+3. LIVEWIRE REGISTRATION — Components in app/Modules/Shop/Livewire/ are in a non-standard
+   namespace. They MUST be manually registered in ShopServiceProvider::boot() using
+   Livewire::component(). Without this, Livewire cannot find them.
 
 IMPORTANT:
 - declare(strict_types=1), typed properties, return types EVERYWHERE
-- The database is already configured in .env — do NOT change it. Use whatever DB_CONNECTION is set.
+- The database is already configured in .env — do NOT change it.
 - Every Livewire component must have a corresponding blade view
-- Payment gateways must define getConfigKeys() so we can tell the developer what to configure
-- Database migrations must be compatible with BOTH SQLite and MySQL/PostgreSQL:
-  Do NOT use MySQL-specific syntax (e.g., ->unsigned() on non-integer columns, ENUM columns).
-  Use Laravel's column types which abstract DB differences.
-- NEVER hardcode business values (prices, tax rates, zone names, thresholds, labels) in:
-  * PHP classes (no hardcoded arrays of zones/prices)
-  * Config files (config/*.php is for technical settings only)
-  * Blade views (no hardcoded currency symbols or rates)
-  ALL business values → database tables → admin panel → seeder for defaults.
+- Database migrations must be compatible with BOTH SQLite and MySQL/PostgreSQL.
+- If you're unsure whether a feature is needed — it probably is. Build it.
 PROMPT,
                 verify: function (): ?string {
                     if (! is_file($this->fullPath.'/app/Core/Models/Page.php')) {
@@ -838,14 +776,11 @@ CREATE:
      return view('shop.livewire.checkout', [...])->layout('layouts.shop');
    Without this, they render as raw HTML fragments without <html>, <head>, or any styling.
 
-   AUTH & USER PAGES — Create styled views for all user account pages:
-   - resources/views/auth/ — login, register, forgot-password, reset-password
-   - resources/views/shop/profile.blade.php — user profile (edit name, email, password)
-   - resources/views/shop/orders.blade.php — order history list
-   - resources/views/shop/order-detail.blade.php — single order view
-   - resources/views/shop/addresses.blade.php — saved addresses management
-   All auth/account pages must use the shop layout and match the site's visual style.
-   Header should show login/register links for guests, and profile/orders/logout for logged-in users.
+   USER ACCOUNT PAGES — If the project has user accounts (e-commerce always does), create
+   ALL pages a registered user expects: authentication, profile, order history, etc.
+   Think about what pages any professional online shop has for logged-in users. Build all of them.
+   All account pages must use the same layout and visual style as the rest of the site.
+   Header must be context-aware: show login/register for guests, account/logout for users.
 
 4. Routing: catch-all /{slug?} in bootstrap/app.php (AFTER Filament routes, in 'then:' callback)
    NEVER use Route::get('/{slug?}', function() {}) — use controller syntax.
@@ -938,61 +873,86 @@ Common Filament v5 namespaces (verify against vendor/ if unsure):
   - Filament\Schemas\Components\Tabs (NOT Filament\Forms\Components\Tabs in v5)
   - Awcodes\Curator\Components\Forms\CuratorPicker (NOT Awcodes\Curator\Forms\CuratorPicker)
 
+YOUR ROLE: You are a senior developer building the admin panel for this project.
+Think about what the admin (site owner / business operator) needs to manage.
+Ask yourself: "What does the admin need to see, create, edit, and monitor on a daily basis?"
+
+Every model in the project that holds business data MUST have a Filament Resource so the admin
+can manage it. Do not skip any model. If a model exists, the admin needs to CRUD it.
+
+THINK — WHAT DOES THIS ADMIN PANEL NEED?
+- Content management (pages, blocks, navigation) — ALWAYS
+- User management — if the project has user accounts, the admin MUST be able to view, edit,
+  and manage users. This is standard in every admin panel.
+- If e-commerce: the admin runs a BUSINESS. Think like a shop owner. What do they need?
+  They need to see orders, manage products, adjust prices, configure shipping, view customers,
+  manage coupons, change tax rates. ALL of this must be in the admin — not in config files.
+- DASHBOARD: The admin panel index page must NOT be empty. Build Filament Widgets that give
+  the admin an at-a-glance overview of their business. Think: what numbers does a site owner
+  check first thing in the morning? Recent activity? Key metrics? Pending actions?
+  Use Filament's StatsOverviewWidget and ChartWidget. The widgets must reflect the actual
+  functionality of THIS project (don't add e-commerce stats to a portfolio site).
+
 CREATE:
-1. FILAMENT RESOURCES:
-   - PageResource with tabs:
-     * Content tab: Builder field with ALL block types (read the blade views!)
-       - Each Builder\Block must have form fields matching the blade view's data keys
-       - Use appropriate field types: TextInput, Textarea, RichEditor, Toggle, Select, CuratorPicker
-       - For array data (like feature cards items), use Repeater inside the block
-     * SEO tab: meta_title, meta_description, og_image (CuratorPicker)
-     * Settings tab: is_published, published_at, slug (auto-generated from title)
-   - NavigationResource — CRUD with location (header/footer), parent_id, order, active toggle
+1. A Filament Resource for EVERY model that holds business data. For each one, decide:
+   - What columns to show in the list table?
+   - What filters and search make sense?
+   - What fields does the form need?
+   - Is it read-only (like orders) or full CRUD (like products)?
 
-     TRANSLATABLE FIELDS — A helper class already exists at app/Filament/Support/TranslatableFields.php.
-     You MUST use it for ALL models that use Spatie HasTranslations. It generates locale tabs automatically.
+2. PageResource — this one is special because it has the block Builder.
+   Read EVERY block blade view in resources/views/themes/default/blocks/.
+   Look at the data key comments at the top of each file. The admin Builder MUST create form fields
+   that match EXACTLY those data keys. This is the contract between admin and frontend.
 
-     Usage in Resource form:
-       use App\Filament\Support\TranslatableFields;
+   Example: if hero.blade.php uses \$block->data['heading'], \$block->data['subheading'], \$block->data['cta_text']
+   then PageResource Builder must have matching form fields for those exact keys.
 
-       TranslatableFields::tabs(fn (string $locale) => [
-           TranslatableFields::field('title', $locale, 'Title', required: true),
-           TranslatableFields::field('meta_description', $locale, 'Meta Description', 'textarea'),
-       ])
+3. Dashboard Widgets — create widgets appropriate for THIS project's functionality.
+   Think about what the admin cares about most. Examples of reasoning:
+   - A shop owner cares about: today's orders, revenue, low stock, pending shipments
+   - A content site admin cares about: total pages, recently updated, draft pages
+   - A booking site admin cares about: upcoming bookings, today's schedule
+   YOU decide what makes sense. Do not add widgets for features that don't exist.
 
-     For block Builder fields, use blockTabs() and blockField() instead (dot notation storage):
-       TranslatableFields::blockTabs(fn (string $locale) => [
-           TranslatableFields::blockField('heading', $locale, 'Heading', required: true),
-       ])
+4. TRANSLATABLE FIELDS — A helper class already exists at app/Filament/Support/TranslatableFields.php.
+   You MUST use it for ALL models that use Spatie HasTranslations. It generates locale tabs automatically.
 
-     In Create pages, use mutateFormDataBeforeCreate() with TranslatableFields::collectTranslations().
-     In Edit pages, use mutateFormDataBeforeSave() with TranslatableFields::saveTranslations().
-     Read the helper class for full API documentation.
+   Usage in Resource form:
+     use App\Filament\Support\TranslatableFields;
 
-     WARNING: Do NOT bind a plain TextInput directly to a HasTranslations attribute —
-     it will show "[object Object]" instead of text. Always use TranslatableFields.
+     TranslatableFields::tabs(fn (string \$locale) => [
+         TranslatableFields::field('title', \$locale, 'Title', required: true),
+         TranslatableFields::field('meta_description', \$locale, 'Meta Description', 'textarea'),
+     ])
 
-2. IF E-COMMERCE ({$shop}):
-   - ProductResource — name, slug, description, price, images, category, variants, active toggle
-   - CategoryResource — name, slug, parent, order
-   - OrderResource — read-only list with status filters, order details, customer info
-   - CouponResource — code, type (percent/fixed), value, valid dates, usage limits
-   - ShippingZoneResource — CRUD for shipping zones: name, countries, postal code ranges,
-     base_cost, per_kg_cost, free_shipping_threshold, is_active, sort_order.
-     Admin must be able to fully manage shipping zones and prices without touching code.
-   - ShopSettingResource (or a Filament custom page) — manage shop-wide settings:
-     tax_rate, currency, shop_name, etc. Key-value pairs, all editable by admin.
+   For block Builder fields, use blockTabs() and blockField() instead (dot notation storage):
+     TranslatableFields::blockTabs(fn (string \$locale) => [
+         TranslatableFields::blockField('heading', \$locale, 'Heading', required: true),
+     ])
 
-3. Register CuratorPlugin in AdminPanelProvider (if not already done)
+   In Create pages, use mutateFormDataBeforeCreate() with TranslatableFields::collectTranslations().
+   In Edit pages, use mutateFormDataBeforeSave() with TranslatableFields::saveTranslations().
+   Read the helper class for full API documentation.
 
-4. Documentation files:
+   WARNING: Do NOT bind a plain TextInput directly to a HasTranslations attribute —
+   it will show "[object Object]" instead of text. Always use TranslatableFields.
+
+5. Register CuratorPlugin in AdminPanelProvider (if not already done)
+
+6. Documentation files:
    - CLAUDE.md — Tessera conventions for AI (block system, admin, how to add features)
    - .ai/platform.md — architecture overview (models, services, relationships)
    - .ai/conventions.md — coding standards (strict types, naming, where files go)
    - .ai/blocks.md — EVERY block type with its data keys and admin field mapping
 
-IMPORTANT: The admin and frontend MUST be in sync. If a block view reads a key,
-the admin MUST have a field that writes to that key. No exceptions.
+PRINCIPLES:
+- The admin and frontend MUST be in sync. If a block view reads a key,
+  the admin MUST have a field that writes to that key. No exceptions.
+- Every business value that exists in the system must be editable by the admin.
+  If the admin cannot change it without a developer, it's a bug.
+- If you're unsure whether the admin needs a particular feature — they do.
+  A good admin panel is COMPLETE. The admin should never need to touch code or config files.
 PROMPT,
                 verify: function (): ?string {
                     // Check for any Resource file in Filament dir
@@ -1072,14 +1032,11 @@ CREATE:
    - FAQ questions must be ones a real customer would ask
    - Testimonials must sound genuine (use realistic names for the country/culture)
 
-3. IF E-COMMERCE: also seed:
-   - Categories with realistic names for THIS business type
-   - Sample products with realistic names, prices, descriptions, variants
-   - Shipping zones appropriate for the target country ({$country}):
-     e.g., for Croatia: "Zagreb" (10000-10999), "Hrvatska" (rest of HR), "EU", "Svijet"
-     with realistic base costs, per-kg costs, and free shipping thresholds
-   - Default shop settings (tax_rate for the country, currency, shop name)
-   - Sample coupons (percent and fixed amount)
+3. IF E-COMMERCE: seed EVERYTHING the shop needs to be functional out of the box.
+   Think: "If I open this shop right now, can I browse products and place an order?"
+   If something is missing from the seed data, the shop doesn't work. Seed it all:
+   categories, products, shipping zones (appropriate for {$country}), shop settings
+   (tax rate, currency for that country), coupons — whatever models exist must have seed data.
 
 4. Run: php artisan migrate --force && php artisan db:seed --force
 
@@ -1255,10 +1212,9 @@ SETUP.md must include:
    - [ ] Set up SSL certificate
    - [ ] Configure backups
 
-7. SHIPPING & SETTINGS MANAGEMENT (if e-commerce)
-   - How to add/edit shipping zones in the admin panel
-   - How to change tax rate, currency, free shipping threshold
-   - Explain that ALL these values are managed in admin — no code changes needed
+7. ADMIN MANAGEMENT (if e-commerce)
+   - Explain that ALL business settings are managed through the admin panel
+   - No code or config file changes are needed for day-to-day operations
 
 8. COMMON TASKS
    - How to add a new page (admin panel)
