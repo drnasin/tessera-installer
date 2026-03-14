@@ -614,8 +614,14 @@ STEP 2 — ALWAYS CREATE (every Tessera project has these):
    - curator_url(\$media): handles both numeric IDs (Curator) and legacy URL strings
    - module_active(string \$module): checks if a module directory exists
 
-5. PageController in app/Core/Http/ — catch-all for /{slug?}
-   The default slug must match the homepage slug used in the seeder.
+5. PageController in app/Core/Http/ — handles page rendering:
+   - The show() method receives an optional slug from the catch-all route /{slug?}
+   - When slug is null (user visits /), render the homepage DIRECTLY — do NOT redirect to another URL.
+     The homepage should be served at /, not at /pocetna or /home. No redirects.
+   - To find the homepage: query the Page model for the first published page by sort order,
+     or add an is_homepage boolean column to the pages table.
+   - NEVER hardcode a slug like 'pocetna' or 'home' in the controller.
+     The homepage slug must come from the database so the admin can change it.
 
 6. Register helpers autoload in composer.json "files" array
 
@@ -1094,7 +1100,8 @@ CREATE:
    - Block data keys MUST match what the blade views expect! Read the block views first.
    - For multilingual projects, block data values should be translation arrays that match
      the locale keys the Block model's resolution method expects.
-   - The homepage slug must match the default slug in PageController — these MUST be consistent.
+   - Mark one page as the homepage (is_homepage = true, or use sort_order = 0).
+     The PageController renders the homepage at / without redirect — no hardcoded slug.
    - Header navigation linking to all main pages
    - Footer navigation (legal, social, secondary pages)
    - EVERY navigation URL must point to an actual working route or page slug.
