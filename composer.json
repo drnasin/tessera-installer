@@ -2,7 +2,7 @@
     "name": "tessera/installer",
     "description": "Tessera AI-Native CMS Installer — AI builds your project",
     "keywords": ["tessera", "cms", "ai", "installer", "laravel"],
-    "license": "MIT",
+    "license": "PolyForm-Noncommercial-1.0.0",
     "type": "project",
     "require": {
         "php": "^8.2"

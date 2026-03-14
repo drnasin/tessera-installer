@@ -216,27 +216,41 @@ Intelligent routing:
 After building the project, AI generates tests and runs them. If any test fails, AI analyzes the output and fixes the issue — either in the test or in the code. Up to 3 attempts.
 
 ### Project Memory & Resume
-AI maintains state in `.tessera/state.json` — tracking completed steps, decisions, and notes. If a build fails or times out, progress is saved. Run the same command again and AI offers to **resume from where it stopped** — no need to re-describe the project.
+AI maintains state in `.tessera/state.json` — tracking completed steps, decisions, and notes. If a build fails, times out, or you cancel with Ctrl+C, progress is saved. Run the same command again and AI offers to **resume from where it stopped** — no need to re-describe the project or re-select the stack.
 
 ```
 $ tessera new my-shop
-# ... fails on step 5 ...
+# ... fails on step 5, or you press Ctrl+C ...
 # Progress saved!
 
 $ tessera new my-shop
-# Detected previous install. What would you like to do?
+# Found previous installation (stack: laravel, status: in_progress)
+#   Completed steps: 4
+#     ✓ packages
+#     ✓ filament
+#     ✓ configs
+#     ✓ structure
+#
 # [0] Resume — continue from where it stopped
 # [1] Start fresh — delete and rebuild
 # [2] Abort
 
 > 0
-Resuming build — skipping completed steps...
+✓ Resuming previous installation...
+  Resuming with: Laravel + Filament (Tessera CMS)
 ✓ [1/8] Create Laravel project (already done)
 ✓ [2/8] Install packages (already done)
-✓ [3/8] Setting up admin panel (already done)
-✓ [4/8] Publishing configs (already done)
+...
 ⏳ [5/8] Creating project structure...
 ```
+
+### Database Setup
+When you choose MySQL, MariaDB, or PostgreSQL, the installer asks for your credentials, tests the connection, and tries to create the database automatically.
+
+If something goes wrong:
+- **Wrong credentials** — you can retry with different credentials
+- **Can't create database** — installer waits for you to create it manually, then verifies
+- **Can't connect at all** — falls back to SQLite so the installation can continue
 
 ## Available Stacks
 
@@ -415,4 +429,6 @@ final class PythonStack implements StackInterface
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+**Free for personal and non-commercial use** under the [PolyForm Noncommercial License 1.0](LICENSE.md).
+
+For commercial use, a commercial license is required. Contact [drnasin on GitHub](https://github.com/drnasin) for licensing.
