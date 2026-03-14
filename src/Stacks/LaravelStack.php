@@ -1559,24 +1559,58 @@ HELPER);
             $env = preg_replace('/^(DB_CONNECTION=.*)$/m', "$1\nDB_HOST={$dbHost}\nDB_PORT={$dbPort}\nDB_DATABASE={$dbName}\nDB_USERNAME={$dbUser}\nDB_PASSWORD={$dbPass}", $env);
         }
 
-        // Try to create the database
+        // Try to create the database (use single quotes for MySQL identifier quoting — backticks break on Windows)
         if ($isPostgres) {
             $pgEnv = $dbPass !== '' ? "PGPASSWORD={$dbPass} " : '';
             $createResult = Console::execSilent("{$pgEnv}createdb -h {$dbHost} -p {$dbPort} -U {$dbUser} {$dbName} 2>&1", $this->fullPath);
         } else {
             $passFlag = $dbPass !== '' ? " -p{$dbPass}" : '';
             $cli = $db === 'mariadb' ? 'mariadb' : 'mysql';
-            $createResult = Console::execSilent("{$cli} -u {$dbUser}{$passFlag} -h {$dbHost} -P {$dbPort} -e \"CREATE DATABASE IF NOT EXISTS \\`{$dbName}\\`;\"", $this->fullPath);
+            $createResult = Console::execSilent("{$cli} -u {$dbUser}{$passFlag} -h {$dbHost} -P {$dbPort} -e \"CREATE DATABASE IF NOT EXISTS {$dbName};\"", $this->fullPath);
         }
 
-        if ($createResult['exit'] !== 0) {
-            Console::warn("Connected but could not create database: {$createResult['output']}");
-            Console::line("Please create the '{$dbName}' database manually.");
-        } else {
+        if ($createResult['exit'] === 0) {
             Console::success("Database '{$dbName}' ready");
+
+            return true;
         }
 
-        return true;
+        // Auto-create failed — check if the database already exists
+        if ($isPostgres) {
+            $pgEnv = $dbPass !== '' ? "PGPASSWORD={$dbPass} " : '';
+            $checkResult = Console::execSilent("{$pgEnv}psql -h {$dbHost} -p {$dbPort} -U {$dbUser} -d {$dbName} -c \"SELECT 1;\" 2>&1", $this->fullPath);
+        } else {
+            $checkResult = Console::execSilent("{$cli} -u {$dbUser}{$passFlag} -h {$dbHost} -P {$dbPort} {$dbName} -e \"SELECT 1;\" 2>&1", $this->fullPath);
+        }
+
+        if ($checkResult['exit'] === 0) {
+            Console::success("Database '{$dbName}' already exists");
+
+            return true;
+        }
+
+        // Database doesn't exist and we can't create it — wait for user
+        Console::warn("Could not create database: {$createResult['output']}");
+        Console::line("Please create the '{$dbName}' database manually, then press Enter to continue.");
+
+        Console::ask('Press Enter when ready');
+
+        // Verify after user says they created it
+        if ($isPostgres) {
+            $verifyResult = Console::execSilent("{$pgEnv}psql -h {$dbHost} -p {$dbPort} -U {$dbUser} -d {$dbName} -c \"SELECT 1;\" 2>&1", $this->fullPath);
+        } else {
+            $verifyResult = Console::execSilent("{$cli} -u {$dbUser}{$passFlag} -h {$dbHost} -P {$dbPort} {$dbName} -e \"SELECT 1;\" 2>&1", $this->fullPath);
+        }
+
+        if ($verifyResult['exit'] === 0) {
+            Console::success("Database '{$dbName}' ready");
+
+            return true;
+        }
+
+        Console::warn("Still cannot access database '{$dbName}': {$verifyResult['output']}");
+
+        return false;
     }
 
     /**
