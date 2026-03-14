@@ -79,8 +79,8 @@ final class NewCommand
 
     private function preflight(): bool
     {
-        // Check AI tools
-        $this->router = ToolRouter::detect();
+        // Check AI tools (with user preferences from env)
+        $this->router = ToolRouter::detect(ToolPreference::fromEnv());
 
         if ($this->router === null) {
             Console::error('No AI tool found!');
@@ -680,6 +680,13 @@ PROMPT;
         if (is_file($setupPath)) {
             Console::bold('  IMPORTANT: Read SETUP.md for configuration steps!');
             Console::line('  It contains API keys, payment setup, and production checklist.');
+            Console::line();
+        }
+
+        // Show AI usage summary
+        $usageSummary = $this->router->usage()->summary();
+        if ($usageSummary !== 'No AI calls made.') {
+            Console::line('  AI usage: '.$usageSummary);
             Console::line();
         }
 

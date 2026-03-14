@@ -187,16 +187,27 @@ AI detects your operating system, package managers, and installed tools. Every A
 ### Auto-Install Dependencies
 If the chosen stack needs a tool you don't have (e.g., Node.js for frontend assets), AI offers to install it automatically using the right package manager for your OS.
 
-### Intelligent AI Routing
-When multiple AI tools are installed, Tessera routes each task to the optimal tool and model based on complexity:
+### Intelligent Cross-Tool Routing
+When multiple AI tools are installed, Tessera routes each task to the **best tool AND model** for the job — switching between tools mid-build:
 
-| Complexity | Claude | Gemini | Use cases |
+| Complexity | Default routing | Fallback chain | Use cases |
 |---|---|---|---|
-| **Simple** | Haiku 4.5 | Flash 2.0 | SETUP.md, config, admin user |
-| **Medium** | Sonnet 4 | Pro 2.5 | Content, tests, fixes |
-| **Complex** | Opus 4 | Pro 2.5 | Core architecture, models, theme |
+| **Simple** | Gemini Flash | Claude Haiku → Codex | SETUP.md, config, fixes |
+| **Medium** | Claude Sonnet | Gemini Pro → Claude Haiku → Gemini Flash | Content, tests, seeding |
+| **Complex** | Claude Opus | Gemini Pro → Claude Sonnet → Gemini Flash | Architecture, models, theme |
 
-This saves tokens and money — SETUP.md doesn't need Opus, but building the database schema does.
+A single build might use Claude Opus for database architecture, Gemini Flash for SETUP.md, and Claude Sonnet for tests — each task gets the right tool.
+
+**Rate limit awareness:** If a tool hits rate limits mid-build, Tessera automatically switches to the next available tool+model. No manual intervention needed.
+
+**Customizable:** Set tool preferences via environment variables:
+```bash
+# Prefer Gemini over Claude
+TESSERA_TOOL_PREFERENCE=gemini,claude,codex
+
+# Never use Codex
+TESSERA_TOOL_EXCLUDE=codex
+```
 
 ```
 $ tessera tools
@@ -206,10 +217,15 @@ Available AI tools:
 ✓ gemini: 0.32.1
 ✓ codex: 0.98.0
 
-Intelligent routing:
-  simple: claude (claude-haiku-4-5-20251001)
+AI routing:
+  simple: gemini (gemini-2.0-flash)
   medium: claude (claude-sonnet-4-20250514)
   complex: claude (claude-opus-4-20250514)
+```
+
+**Usage summary** at end of build:
+```
+AI usage: claude: 5 calls (3 opus, 2 sonnet) | gemini: 3 calls (3 flash)
 ```
 
 ### Self-Healing Tests

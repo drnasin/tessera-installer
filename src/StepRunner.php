@@ -170,8 +170,7 @@ final class StepRunner
                 ."Fix the issue and install the package. Working directory: {$this->workingDir}\n"
                 ."If the package doesn't exist or is incompatible, find an alternative or skip it.";
 
-            $selection = $this->router->resolve(Complexity::SIMPLE);
-            $response = $selection->tool->execute($fixPrompt, $this->workingDir, 120, $selection->model);
+            $response = $this->router->executeWithFallback($fixPrompt, $this->workingDir, Complexity::SIMPLE, 120);
 
             if ($response->success) {
                 // Verify it's installed now
@@ -226,13 +225,8 @@ final class StepRunner
         return $this->run(
             name: $name,
             execute: function () use ($name, $prompt, $timeout, $complexity): bool {
-                $selection = $this->router->resolve($complexity);
-                $toolName = $selection->tool->name();
-                $modelName = $selection->model ? basename($selection->model) : 'default';
-                Console::line("  Using: {$toolName} ({$modelName})");
-
                 $startTime = time();
-                $response = $selection->tool->execute($prompt, $this->workingDir, $timeout, $selection->model);
+                $response = $this->router->executeWithFallback($prompt, $this->workingDir, $complexity, $timeout);
                 $elapsed = time() - $startTime;
                 $elapsedMin = round($elapsed / 60, 1);
 
@@ -339,12 +333,10 @@ final class StepRunner
             $prompt .= "Hint: {$hint}\n";
         }
 
-        // Fixes are straightforward — use a fast model
-        $selection = $this->router->resolve(Complexity::SIMPLE);
-        Console::line("  Fix using: {$selection->tool->name()}");
-        $response = $selection->tool->execute($prompt, $this->workingDir, 120, $selection->model);
+        // Fixes are straightforward — use a fast model with full fallback
+        $response = $this->router->executeWithFallback($prompt, $this->workingDir, Complexity::SIMPLE, 120);
 
-        if (! $response->success && $response->error) {
+        if (! $response->success && $response->error !== '') {
             Console::warn("  AI fix failed: {$response->error}");
         }
 

@@ -13,4 +13,11 @@ final readonly class ToolSelection
         public AiTool $tool,
         public ?string $model,
     ) {}
+
+    public function describe(): string
+    {
+        $model = $this->model ? basename($this->model) : 'default';
+
+        return "{$this->tool->name()} ({$model})";
+    }
 }

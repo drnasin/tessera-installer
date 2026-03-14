@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace Tessera\Installer;
 
 /**
- * Routes AI tasks to the best available tool + model based on complexity.
+ * Smart cross-tool AI routing with rate limit awareness.
  *
- * SIMPLE  → fast/cheap (Haiku, Gemini Flash)
- * MEDIUM  → balanced (Sonnet, Gemini Pro)
- * COMPLEX → best reasoning (Opus, Gemini Pro)
+ * Each task is routed to the best available tool+model for its complexity.
+ * Rate-limited tools are automatically skipped with fallback to alternatives.
+ * Usage is tracked per tool+model for summary display.
+ *
+ * SIMPLE  → Gemini Flash (fastest) > Claude Haiku > Codex
+ * MEDIUM  → Claude Sonnet > Gemini Pro > Claude Haiku > Gemini Flash > Codex
+ * COMPLEX → Claude Opus > Gemini Pro > Claude Sonnet > Gemini Flash > Codex
  */
 final class ToolRouter
 {
-    /**
-     * Model to use per tool per complexity.
-     * null = use tool's default model.
-     */
     private const MODEL_MAP = [
         'claude' => [
             'simple' => 'claude-haiku-4-5-20251001',
@@ -36,25 +36,60 @@ final class ToolRouter
     ];
 
     /**
-     * Tool preference order — best reasoning tools first.
+     * Fallback chains per complexity — ordered by capability fit.
+     * Each entry is [tool, model]. The chain is independent of user preference;
+     * preference reorders WITHIN the chain but doesn't change the model mapping.
+     *
+     * @var array<string, array<int, array{0: string, 1: ?string}>>
      */
-    private const TOOL_PREFERENCE = ['claude', 'gemini', 'codex'];
+    private const FALLBACK_CHAINS = [
+        'simple' => [
+            ['gemini', 'gemini-2.0-flash'],
+            ['claude', 'claude-haiku-4-5-20251001'],
+            ['codex', null],
+            ['claude', 'claude-sonnet-4-20250514'],
+            ['gemini', 'gemini-2.5-pro'],
+        ],
+        'medium' => [
+            ['claude', 'claude-sonnet-4-20250514'],
+            ['gemini', 'gemini-2.5-pro'],
+            ['claude', 'claude-haiku-4-5-20251001'],
+            ['gemini', 'gemini-2.0-flash'],
+            ['codex', null],
+        ],
+        'complex' => [
+            ['claude', 'claude-opus-4-20250514'],
+            ['gemini', 'gemini-2.5-pro'],
+            ['claude', 'claude-sonnet-4-20250514'],
+            ['gemini', 'gemini-2.0-flash'],
+            ['codex', null],
+        ],
+    ];
 
     /** @var array<string, AiTool> */
     private array $tools;
 
+    private ToolPreference $preference;
+
+    private RateLimitTracker $rateLimits;
+
+    private UsageTracker $usage;
+
     /**
-     * @param array<string, AiTool> $tools Available tools keyed by name
+     * @param  array<string, AiTool>  $tools  Available tools keyed by name
      */
-    public function __construct(array $tools)
+    public function __construct(array $tools, ?ToolPreference $preference = null)
     {
         $this->tools = $tools;
+        $this->preference = $preference ?? new ToolPreference;
+        $this->rateLimits = new RateLimitTracker;
+        $this->usage = new UsageTracker;
     }
 
     /**
      * Create a router from auto-detection of installed tools.
      */
-    public static function detect(): ?self
+    public static function detect(?ToolPreference $preference = null): ?self
     {
         $detected = AiTool::detectAllInstances();
 
@@ -62,7 +97,7 @@ final class ToolRouter
             return null;
         }
 
-        return new self($detected);
+        return new self($detected, $preference);
     }
 
     /**
@@ -74,65 +109,117 @@ final class ToolRouter
     }
 
     /**
-     * Resolve the best tool + model for a given complexity.
+     * Resolve the best available tool+model for a complexity level.
+     * Respects rate limits, dead tools, and user preferences.
      */
-    public function resolve(Complexity $complexity): ToolSelection
+    public function resolve(Complexity $complexity): ?ToolSelection
     {
-        foreach (self::TOOL_PREFERENCE as $name) {
-            if (isset($this->tools[$name])) {
-                $model = self::MODEL_MAP[$name][$complexity->value] ?? null;
+        $attempts = $this->buildAttemptOrder($complexity);
 
-                return new ToolSelection($this->tools[$name], $model);
-            }
-        }
-
-        // Should never happen if constructor got at least one tool
-        $first = reset($this->tools);
-
-        return new ToolSelection($first, null);
-    }
-
-    /**
-     * Get a fallback tool after the primary one failed.
-     */
-    public function fallback(Complexity $complexity, string $failedTool): ?ToolSelection
-    {
-        $skipped = false;
-
-        foreach (self::TOOL_PREFERENCE as $name) {
-            if ($name === $failedTool) {
-                $skipped = true;
-
+        foreach ($attempts as [$toolName, $model]) {
+            if (! isset($this->tools[$toolName])) {
                 continue;
             }
 
-            if ($skipped && isset($this->tools[$name])) {
-                $model = self::MODEL_MAP[$name][$complexity->value] ?? null;
-
-                return new ToolSelection($this->tools[$name], $model);
+            if (! $this->rateLimits->isAvailable($toolName)) {
+                continue;
             }
+
+            return new ToolSelection($this->tools[$toolName], $model);
         }
 
         return null;
     }
 
     /**
-     * Get the primary tool (first available — for display/conversation use).
+     * Execute a prompt with automatic fallback on rate limits and failures.
+     * This is the primary method for running AI tasks.
+     */
+    public function executeWithFallback(
+        string $prompt,
+        string $workingDir,
+        Complexity $complexity,
+        int $timeout = 300,
+    ): AiResponse {
+        $attempts = $this->buildAttemptOrder($complexity);
+        $lastResponse = null;
+
+        foreach ($attempts as [$toolName, $model]) {
+            if (! isset($this->tools[$toolName])) {
+                continue;
+            }
+
+            if (! $this->rateLimits->isAvailable($toolName)) {
+                continue;
+            }
+
+            $tool = $this->tools[$toolName];
+            $modelDisplay = $model !== null ? basename($model) : 'default';
+            Console::line("  Using: {$toolName} ({$modelDisplay})");
+
+            $this->usage->record($toolName, $model);
+            $response = $tool->execute($prompt, $workingDir, $timeout, $model);
+            $lastResponse = $response;
+
+            if ($response->success) {
+                return $response;
+            }
+
+            if ($response->isRateLimited()) {
+                $this->rateLimits->markRateLimited($toolName);
+                $cooldown = $this->rateLimits->cooldownRemaining($toolName);
+                Console::warn("  {$toolName} rate-limited (cooldown: {$cooldown}s). Trying next tool...");
+
+                continue;
+            }
+
+            if ($response->isToolDown()) {
+                $this->rateLimits->markDead($toolName);
+                Console::warn("  {$toolName} appears down. Skipping for remaining steps.");
+
+                continue;
+            }
+
+            // Other failure — still try next in chain
+            if ($response->error !== '') {
+                Console::warn("  {$toolName} failed: {$response->error}");
+            }
+
+            continue;
+        }
+
+        return $lastResponse ?? new AiResponse(false, '', 'All AI tools unavailable', 1);
+    }
+
+    /**
+     * Get the primary tool for conversational use (requirements gathering).
+     * Rate-limit aware.
      */
     public function primary(): AiTool
     {
-        foreach (self::TOOL_PREFERENCE as $name) {
-            if (isset($this->tools[$name])) {
+        $preferredOrder = $this->preference->orderedTools(array_keys($this->tools));
+
+        foreach ($preferredOrder as $name) {
+            if ($this->rateLimits->isAvailable($name) && isset($this->tools[$name])) {
                 return $this->tools[$name];
             }
         }
 
+        // Fallback: return first tool even if rate-limited (caller handles failure)
         return reset($this->tools);
     }
 
+    public function usage(): UsageTracker
+    {
+        return $this->usage;
+    }
+
+    public function rateLimits(): RateLimitTracker
+    {
+        return $this->rateLimits;
+    }
+
     /**
-     * Get all available tool names.
-     *
      * @return array<string>
      */
     public function availableNames(): array
@@ -140,16 +227,13 @@ final class ToolRouter
         return array_keys($this->tools);
     }
 
-    /**
-     * Get count of available tools.
-     */
     public function count(): int
     {
         return count($this->tools);
     }
 
     /**
-     * Build display string showing routing info.
+     * Build display string showing routing info per complexity.
      */
     public function describe(): string
     {
@@ -157,10 +241,58 @@ final class ToolRouter
 
         foreach ([Complexity::SIMPLE, Complexity::MEDIUM, Complexity::COMPLEX] as $complexity) {
             $selection = $this->resolve($complexity);
-            $model = $selection->model ? " ({$selection->model})" : '';
-            $lines[] = "  {$complexity->value}: {$selection->tool->name()}{$model}";
+
+            if ($selection !== null) {
+                $model = $selection->model !== null ? " ({$selection->model})" : '';
+                $lines[] = "  {$complexity->value}: {$selection->tool->name()}{$model}";
+            } else {
+                $lines[] = "  {$complexity->value}: (no tool available)";
+            }
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Build ordered list of [toolName, model] attempts for a complexity.
+     * User preference reorders tools within the chain.
+     *
+     * @return array<int, array{0: string, 1: ?string}>
+     */
+    private function buildAttemptOrder(Complexity $complexity): array
+    {
+        $chain = self::FALLBACK_CHAINS[$complexity->value];
+        $preferredOrder = $this->preference->orderedTools(array_keys($this->tools));
+
+        $attempts = [];
+        $seen = [];
+
+        // First pass: add chain entries for preferred tools (in preference order)
+        foreach ($preferredOrder as $preferred) {
+            foreach ($chain as [$toolName, $model]) {
+                if ($toolName !== $preferred) {
+                    continue;
+                }
+
+                $key = $toolName.':'.($model ?? 'null');
+
+                if (! isset($seen[$key])) {
+                    $attempts[] = [$toolName, $model];
+                    $seen[$key] = true;
+                }
+            }
+        }
+
+        // Second pass: add remaining chain entries not yet included
+        foreach ($chain as [$toolName, $model]) {
+            $key = $toolName.':'.($model ?? 'null');
+
+            if (! isset($seen[$key])) {
+                $attempts[] = [$toolName, $model];
+                $seen[$key] = true;
+            }
+        }
+
+        return $attempts;
     }
 }
