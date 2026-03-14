@@ -791,6 +791,10 @@ CREATE:
      If e-commerce, include the cart widget Livewire component. Each interactive element (cart, login, etc.)
      must appear exactly ONCE — don't duplicate functionality between a Livewire component and a static link.
    - partials/footer.blade.php — columns: links, contact info, social. Copyright year.
+     CRITICAL: Footer links MUST come from the Navigation model (location='footer'), same as header.
+     NEVER hardcode page slugs as href="/about" or href="/dostava" — these pages may not exist.
+     Use Navigation::active()->location('footer') to load links from the database.
+     The admin manages footer links through the Navigation resource — not through code.
    - templates/default.blade.php — @extends master, loops through blocks
    - templates/full-width.blade.php — same as default (create BOTH templates)
 
@@ -856,6 +860,9 @@ Images: use curator_url(\$block->data['image']) helper for all media
 
 SELF-CHECK — After creating each page/component, mentally render it and verify:
 - Can I read ALL text against its background? (white text on light backgrounds = invisible)
+- ALL text content (names, titles, prices, descriptions) must be visible WITHOUT hovering.
+  Hover states add visual polish, but content must be readable in the DEFAULT state.
+  If a product card shows the name only on hover — that is WRONG. Users can't hover on mobile.
 - Do form inputs have visible borders/backgrounds? (white inputs on white = invisible)
 - Is there enough contrast between sections? (alternating backgrounds help)
 - Do interactive elements have hover/focus/active states?
@@ -873,8 +880,11 @@ Before finishing, verify these connections:
 - If you reference a route name (route('shop.cart')), run: grep -r "->name(" routes/ to verify it exists.
 - If you call a Livewire component (<livewire:cart-widget />), verify the class exists in app/Livewire/.
 - If you use a helper (curator_url(), active_page()), verify it exists in app/Core/helpers.php.
-- If you link to a URL (/shop, /admin), verify the route is defined.
 - If you use a config value (config('platform.supported_locales')), verify the config file has that key.
+- NEVER hardcode page URLs as href="/about" or href="/dostava" in blade views.
+  These pages may not exist. All navigation links must come from the Navigation model
+  or use route() helper for named routes. The only acceptable hardcoded paths are
+  well-known routes like /shop, /admin, or / (homepage).
 Rule: NEVER assume another part of the codebase uses a specific name — READ IT and match it exactly.
 If ANY answer is "no" — fix it before moving on.
 PROMPT,
