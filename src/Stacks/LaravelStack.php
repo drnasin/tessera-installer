@@ -885,47 +885,24 @@ Builder\Block::make('hero')->schema([
     CuratorPicker::make('background_image'),
 ])
 
-CRITICAL — FILAMENT 5 NAMESPACE RULES:
-Filament 5 moved many classes to new namespaces. Using old Filament 4 namespaces causes
-fatal "Class not found" errors. These are the CORRECT namespaces — use ONLY these:
+CRITICAL — NAMESPACE VERIFICATION:
+Filament changes namespaces between major versions. Your training data may be outdated.
+DO NOT assume you know the correct namespace for ANY Filament class.
 
-TABLE ACTIONS (moved from Tables\Actions to top-level Actions):
-  - Filament\Actions\EditAction (NOT Filament\Tables\Actions\EditAction)
-  - Filament\Actions\DeleteAction (NOT Filament\Tables\Actions\DeleteAction)
-  - Filament\Actions\CreateAction (NOT Filament\Tables\Actions\CreateAction)
-  - Filament\Actions\BulkActionGroup (NOT Filament\Tables\Actions\BulkActionGroup)
-  - Filament\Actions\DeleteBulkAction (NOT Filament\Tables\Actions\DeleteBulkAction)
-  - Filament\Actions\BulkAction (NOT Filament\Tables\Actions\BulkAction)
-  - Filament\Actions\Action (NOT Filament\Tables\Actions\Action)
+Before writing Filament code, you MUST verify namespaces by checking the installed source:
 
-LAYOUT COMPONENTS (moved from Forms\Components to Schemas\Components):
-  - Filament\Schemas\Components\Section (NOT Filament\Forms\Components\Section)
-  - Filament\Schemas\Components\Fieldset (NOT Filament\Forms\Components\Fieldset)
-  - Filament\Schemas\Components\Grid (NOT Filament\Forms\Components\Grid)
-  - Filament\Schemas\Components\Group (NOT Filament\Forms\Components\Group)
-  - Filament\Schemas\Components\Tabs (NOT Filament\Forms\Components\Tabs)
-  - Filament\Schemas\Components\Wizard (NOT Filament\Forms\Components\Wizard)
-  - Filament\Schemas\Components\View (NOT Filament\Forms\Components\View)
+1. Run: find vendor/filament -name "EditAction.php" -type f
+   This tells you the ACTUAL namespace. Use that, not what you remember.
 
-FORM INPUT COMPONENTS (STAYED in Forms\Components — these are correct):
-  - Filament\Forms\Components\TextInput, RichEditor, Select, Toggle, Builder, Repeater
-  - Filament\Forms\Components\Checkbox, DatePicker, FileUpload, Textarea, ColorPicker
-  - Filament\Forms\Components\Placeholder (stayed in Forms)
+2. For ANY Filament class you want to use (Section, EditAction, TextColumn, etc.):
+   find vendor/filament -name "ClassName.php" -type f
+   Then read the first few lines to get the correct namespace.
 
-TABLE COLUMNS (STAYED in Tables\Columns — these are correct):
-  - Filament\Tables\Columns\TextColumn, IconColumn, BadgeColumn, ToggleColumn, ImageColumn
+3. Check the installed Filament version:
+   composer show filament/filament | head -5
 
-OTHER:
-  - Filament\Resources\Resource (base resource class)
-  - Filament\Schemas\Schema (NOT Filament\Forms\Form for schema method)
-  - Filament\Tables\Table (table configuration)
-  - Awcodes\Curator\Components\Forms\CuratorPicker
-
-When writing `use` statements, import the TOP-LEVEL namespaces and use short references:
-  use Filament\Actions;        // then Actions\EditAction::make()
-  use Filament\Schemas\Components;  // or import Section directly
-  use Filament\Forms;          // then Forms\Components\TextInput::make()
-  use Filament\Tables;         // then Tables\Columns\TextColumn::make()
+This takes 10 seconds and prevents "Class not found" errors that break the entire admin.
+NEVER guess a namespace — ALWAYS verify it against vendor/.
 
 YOUR ROLE: You are a senior developer building the admin panel for this project.
 Think about what the admin (site owner / business operator) needs to manage.
@@ -1495,31 +1472,29 @@ HELPER);
     }
 
     /**
-     * Fix Filament 5 namespace issues in generated code.
-     * AI models often use Filament 4 namespaces despite being instructed otherwise.
+     * Fix wrong Filament namespaces in generated code.
+     *
+     * Version-agnostic: scans generated PHP files for Filament class references,
+     * checks each one against vendor/, and fixes any that point to the wrong namespace.
+     * Works with any Filament version — no hardcoded namespace maps.
      */
     private function fixFilamentNamespaces(): void
     {
         $filamentDir = $this->fullPath.'/app/Filament';
+        $vendorDir = $this->fullPath.'/vendor/filament';
 
-        if (! is_dir($filamentDir)) {
+        if (! is_dir($filamentDir) || ! is_dir($vendorDir)) {
             return;
         }
 
-        // Filament 5 namespace changes
-        $replacements = [
-            // Table actions moved from Tables\Actions to top-level Actions
-            'Tables\\Actions\\' => '\\Filament\\Actions\\',
-            // Layout components moved from Forms\Components to Schemas\Components
-            'Forms\\Components\\Section' => '\\Filament\\Schemas\\Components\\Section',
-            'Forms\\Components\\Fieldset' => '\\Filament\\Schemas\\Components\\Fieldset',
-            'Forms\\Components\\Grid' => '\\Filament\\Schemas\\Components\\Grid',
-            'Forms\\Components\\Group' => '\\Filament\\Schemas\\Components\\Group',
-            'Forms\\Components\\Tabs' => '\\Filament\\Schemas\\Components\\Tabs',
-            'Forms\\Components\\Wizard' => '\\Filament\\Schemas\\Components\\Wizard',
-            'Forms\\Components\\View' => '\\Filament\\Schemas\\Components\\View',
-        ];
+        // Build a map of class name => actual namespace from vendor/filament/
+        $classMap = $this->buildFilamentClassMap($vendorDir);
 
+        if (empty($classMap)) {
+            return;
+        }
+
+        // Scan generated files and fix wrong references
         $rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($filamentDir));
         $fixed = 0;
 
@@ -1531,8 +1506,32 @@ HELPER);
             $content = (string) file_get_contents($file->getPathname());
             $original = $content;
 
-            foreach ($replacements as $old => $new) {
-                $content = str_replace($old, $new, $content);
+            // Find all Filament class references (use statements and inline FQCNs)
+            // Match patterns like: Filament\Something\ClassName or Tables\Actions\ClassName
+            if (preg_match_all('/(?:Filament\\\\[A-Za-z\\\\]+\\\\|Tables\\\\[A-Za-z\\\\]+\\\\|Forms\\\\[A-Za-z\\\\]+\\\\)([A-Z][A-Za-z]+)/', $content, $matches, PREG_SET_ORDER)) {
+                foreach ($matches as $match) {
+                    $fullRef = $match[0]; // e.g., "Tables\Actions\EditAction"
+                    $className = $match[1]; // e.g., "EditAction"
+
+                    // Skip if this class isn't in our map
+                    if (! isset($classMap[$className])) {
+                        continue;
+                    }
+
+                    $correctFqcn = $classMap[$className];
+
+                    // Build the FQCN from the reference as used in code
+                    // References can be relative (Tables\Actions\EditAction) or absolute (\Filament\Tables\Actions\EditAction)
+                    $usedFqcn = 'Filament\\'.$fullRef;
+                    if (str_starts_with($fullRef, 'Filament\\')) {
+                        $usedFqcn = $fullRef;
+                    }
+
+                    if ($usedFqcn !== $correctFqcn) {
+                        // Determine how it's referenced in the file and replace appropriately
+                        $content = str_replace($fullRef, $this->makeRelativeRef($correctFqcn), $content);
+                    }
+                }
             }
 
             if ($content !== $original) {
@@ -1542,8 +1541,78 @@ HELPER);
         }
 
         if ($fixed > 0) {
-            Console::warn("  Auto-fixed Filament 5 namespaces in {$fixed} files");
+            Console::warn("  Auto-fixed Filament namespaces in {$fixed} files");
         }
+    }
+
+    /**
+     * Build a map of ClassName => full FQCN from vendor/filament/ source files.
+     *
+     * @return array<string, string>
+     */
+    private function buildFilamentClassMap(string $vendorDir): array
+    {
+        $map = [];
+        $rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($vendorDir));
+
+        foreach ($rii as $file) {
+            if ($file->isDir() || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            // Only index classes commonly used in Resources (Actions, Components, Columns)
+            $path = $file->getPathname();
+            if (! preg_match('/(Actions|Components|Columns|Resources)/', $path)) {
+                continue;
+            }
+
+            $className = $file->getBasename('.php');
+
+            // Skip non-class files (interfaces, traits, concerns, contracts)
+            if (str_contains($path, 'Concerns') || str_contains($path, 'Contracts')) {
+                continue;
+            }
+
+            // Read namespace from file
+            $handle = fopen($path, 'r');
+            if ($handle === false) {
+                continue;
+            }
+
+            $namespace = null;
+            $lines = 0;
+
+            while (($line = fgets($handle)) !== false && $lines < 10) {
+                if (preg_match('/^namespace\s+(Filament\\\\[^;]+);/', $line, $m)) {
+                    $namespace = $m[1];
+                    break;
+                }
+                $lines++;
+            }
+
+            fclose($handle);
+
+            if ($namespace !== null) {
+                $fqcn = $namespace.'\\'.$className;
+
+                // If multiple classes have the same name, prefer the one in a more specific namespace
+                // (e.g., Filament\Actions\EditAction over Filament\Forms\Components\Actions\EditAction)
+                if (! isset($map[$className]) || substr_count($fqcn, '\\') < substr_count($map[$className], '\\')) {
+                    $map[$className] = $fqcn;
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Convert a FQCN to the relative reference style used in Filament Resources.
+     * e.g., "Filament\Actions\EditAction" → "\Filament\Actions\EditAction"
+     */
+    private function makeRelativeRef(string $fqcn): string
+    {
+        return '\\'.$fqcn;
     }
 
     /**
