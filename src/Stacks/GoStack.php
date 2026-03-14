@@ -33,10 +33,10 @@ final class GoStack implements StackInterface
     public function description(): string
     {
         return 'High-performance API servers, microservices, CLI tools, '
-            . 'real-time systems, systems with high concurrent user counts. '
-            . 'Best for: delivery platforms, payment processors, '
-            . 'chat servers, IoT gateways, DevOps tools. '
-            . 'Stack: Go (latest), Chi/Gin router, sqlc/GORM, PostgreSQL, Docker.';
+            .'real-time systems, systems with high concurrent user counts. '
+            .'Best for: delivery platforms, payment processors, '
+            .'chat servers, IoT gateways, DevOps tools. '
+            .'Stack: Go (latest), Chi/Gin router, sqlc/GORM, PostgreSQL, Docker.';
     }
 
     public function preflight(): array
@@ -53,7 +53,7 @@ final class GoStack implements StackInterface
 
     public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool
     {
-        $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $this->fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
         $this->steps = new StepRunner($router, $this->fullPath);
 
         $desc = $requirements['description'] ?? 'Go backend';
@@ -67,7 +67,7 @@ final class GoStack implements StackInterface
         $systemContext = $system->buildAiContext();
 
         // Check if we're resuming
-        $resuming = is_dir($this->fullPath) && is_file($this->fullPath . '/.tessera/state.json');
+        $resuming = is_dir($this->fullPath) && is_file($this->fullPath.'/.tessera/state.json');
 
         Console::line();
         if ($resuming) {
@@ -93,11 +93,11 @@ final class GoStack implements StackInterface
         if ($memory->isStepDone('scaffold')) {
             Console::success('[1/4] Creating project structure (already done)');
         } else {
-        $memory->startStep('scaffold');
-        $this->steps->runAi(
-            name: '[1/4] Creating project structure',
-            complexity: Complexity::COMPLEX,
-            prompt: <<<PROMPT
+            $memory->startStep('scaffold');
+            $this->steps->runAi(
+                name: '[1/4] Creating project structure',
+                complexity: Complexity::COMPLEX,
+                prompt: <<<PROMPT
 You are a SENIOR Go developer building a production-grade project from scratch.
 Think carefully about what THIS specific project needs before writing any code.
 
@@ -161,24 +161,45 @@ STEP 2 — CREATE:
 
 IMPORTANT: Use modern Go features appropriate for {$goVersion}.
 Use generics, slog, and other modern features if the version supports them.
+
+SELF-CHECK — After creating each handler/service, verify:
+- Does every handler return proper HTTP status codes? (201 for create, 404 for not found)
+- Are all errors wrapped with context? (fmt.Errorf("create order: %w", err))
+- Does every database query handle sql.ErrNoRows?
+- Are all request bodies validated before processing?
+- Do webhook handlers verify signatures before processing payloads?
+
+INTEGRATION CHECK — Your code does NOT exist in isolation.
+Before finishing, verify these connections:
+- If a handler uses a repository method (repo.FindByID), verify that method exists on the interface.
+- If router registers a path (/api/v1/products), verify the handler function signature matches.
+- If middleware reads a header or query param, verify the client/frontend sends it with that exact name.
+- If a migration creates a column (price_cents INT), verify the struct field matches (PriceCents int).
+- If a service calls another service, verify the method exists with the correct signature.
+- If .env.example lists a variable (STRIPE_SECRET_KEY), verify the config loader reads it.
+Rule: NEVER assume a function, column, or variable name — READ the source file and match it exactly.
+
+PACKAGE VERIFICATION — Before using any import:
+Run: grep -r "module " go.mod to verify the module path.
+Check that imported packages exist in go.mod or are part of the standard library.
 PROMPT,
-            verify: function (): ?string {
-                return is_file($this->fullPath . '/go.mod') ? null : 'go.mod not created';
-            },
-            timeout: 600,
-        );
-        $memory->completeStep('scaffold');
+                verify: function (): ?string {
+                    return is_file($this->fullPath.'/go.mod') ? null : 'go.mod not created';
+                },
+                timeout: 600,
+            );
+            $memory->completeStep('scaffold');
         } // end if !isStepDone('scaffold')
 
         // Step 2: Generate tests
         if ($memory->isStepDone('tests')) {
             Console::success('[2/4] Generating tests (already done)');
         } else {
-        $memory->startStep('tests');
-        $this->steps->runAi(
-            name: '[2/4] Generating tests',
-            complexity: Complexity::MEDIUM,
-            prompt: <<<PROMPT
+            $memory->startStep('tests');
+            $this->steps->runAi(
+                name: '[2/4] Generating tests',
+                complexity: Complexity::MEDIUM,
+                prompt: <<<'PROMPT'
 Create Go tests for this project. Read the project structure first.
 
 Create _test.go files next to the code they test:
@@ -191,42 +212,42 @@ Create _test.go files next to the code they test:
 Use table-driven tests. Use testify/assert for cleaner assertions.
 IMPORTANT: Write ONLY tests that will PASS with the current codebase.
 PROMPT,
-            verify: null,
-            skippable: true,
-            timeout: 300,
-        );
-        $memory->completeStep('tests');
+                verify: null,
+                skippable: true,
+                timeout: 300,
+            );
+            $memory->completeStep('tests');
         } // end if !isStepDone('tests')
 
         // Step 3: Run tests and fix
         if ($memory->isStepDone('tests_fixed')) {
             Console::success('[3/4] Running and fixing tests (already done)');
         } else {
-        $memory->startStep('tests_fixed');
-        $this->steps->runAi(
-            name: '[3/4] Running and fixing tests',
-            complexity: Complexity::MEDIUM,
-            prompt: <<<PROMPT
+            $memory->startStep('tests_fixed');
+            $this->steps->runAi(
+                name: '[3/4] Running and fixing tests',
+                complexity: Complexity::MEDIUM,
+                prompt: <<<'PROMPT'
 Run the project tests with: go test ./...
 If any tests fail, analyze the output and fix either the test or the code.
 Do NOT delete tests — fix them.
 PROMPT,
-            verify: null,
-            skippable: true,
-            timeout: 300,
-        );
-        $memory->completeStep('tests_fixed');
+                verify: null,
+                skippable: true,
+                timeout: 300,
+            );
+            $memory->completeStep('tests_fixed');
         } // end if !isStepDone('tests_fixed')
 
         // Step 4: SETUP.md — developer handoff
         if ($memory->isStepDone('setup_md')) {
             Console::success('[4/4] Generating setup instructions (already done)');
         } else {
-        $memory->startStep('setup_md');
-        $this->steps->runAi(
-            name: '[4/4] Generating setup instructions',
-            complexity: Complexity::SIMPLE,
-            prompt: <<<PROMPT
+            $memory->startStep('setup_md');
+            $this->steps->runAi(
+                name: '[4/4] Generating setup instructions',
+                complexity: Complexity::SIMPLE,
+                prompt: <<<PROMPT
 Read the entire project you just built. Generate a SETUP.md file in the project root.
 
 PROJECT: {$desc}
@@ -254,11 +275,11 @@ SETUP.md must include:
 
 Write for a JUNIOR developer. Explain Go-specific concepts briefly.
 PROMPT,
-            verify: fn (): ?string => is_file($this->fullPath . '/SETUP.md') ? null : 'SETUP.md not created',
-            skippable: true,
-            timeout: 300,
-        );
-        $memory->completeStep('setup_md');
+                verify: fn (): ?string => is_file($this->fullPath.'/SETUP.md') ? null : 'SETUP.md not created',
+                skippable: true,
+                timeout: 300,
+            );
+            $memory->completeStep('setup_md');
         } // end if !isStepDone('setup_md')
 
         $this->steps->printSummary();
@@ -268,7 +289,7 @@ PROMPT,
 
     public function postSetup(string $directory): bool
     {
-        $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
 
         Console::spinner('Running go mod tidy...');
         Console::exec('go mod tidy', $fullPath);

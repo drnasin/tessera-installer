@@ -42,10 +42,10 @@ final class NodeStack implements StackInterface
     public function description(): string
     {
         return 'API servers, real-time applications, SSR web apps, '
-            . 'SaaS platforms, dashboards with React/Vue frontend. '
-            . 'Best for: real-time chat, streaming, API-first architectures, '
-            . 'JavaScript/TypeScript full-stack. '
-            . 'Stack: Node.js (latest), TypeScript, Next.js or Express, Prisma, PostgreSQL.';
+            .'SaaS platforms, dashboards with React/Vue frontend. '
+            .'Best for: real-time chat, streaming, API-first architectures, '
+            .'JavaScript/TypeScript full-stack. '
+            .'Stack: Node.js (latest), TypeScript, Next.js or Express, Prisma, PostgreSQL.';
     }
 
     public function preflight(): array
@@ -58,7 +58,7 @@ final class NodeStack implements StackInterface
         } else {
             $version = trim(str_replace('v', '', $node['output']));
             if (version_compare($version, '20.0.0', '<')) {
-                $missing[] = 'Node.js 20+ (found: ' . $version . ')';
+                $missing[] = 'Node.js 20+ (found: '.$version.')';
             }
         }
 
@@ -72,7 +72,7 @@ final class NodeStack implements StackInterface
 
     public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool
     {
-        $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $this->fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
         $this->router = $router;
         $this->system = $system;
         $this->memory = $memory;
@@ -92,7 +92,7 @@ final class NodeStack implements StackInterface
         $systemContext = $system->buildAiContext();
 
         // Check if we're resuming
-        $resuming = is_dir($this->fullPath) && is_file($this->fullPath . '/.tessera/state.json');
+        $resuming = is_dir($this->fullPath) && is_file($this->fullPath.'/.tessera/state.json');
 
         Console::line();
         if ($resuming) {
@@ -119,11 +119,11 @@ final class NodeStack implements StackInterface
         if ($memory->isStepDone('scaffold')) {
             Console::success('[1/4] Creating project structure (already done)');
         } else {
-        $memory->startStep('scaffold');
-        $this->steps->runAi(
-            name: '[1/4] Creating project structure',
-            complexity: Complexity::COMPLEX,
-            prompt: <<<PROMPT
+            $memory->startStep('scaffold');
+            $this->steps->runAi(
+                name: '[1/4] Creating project structure',
+                complexity: Complexity::COMPLEX,
+                prompt: <<<PROMPT
 You are a SENIOR Node.js/TypeScript developer building a project from scratch.
 Think carefully about what THIS specific project needs before writing any code.
 
@@ -183,24 +183,52 @@ IF E-COMMERCE is YES:
            STRIPE_WEBHOOK_SECRET=whsec_...
 
 IMPORTANT: Use features appropriate for the detected Node.js version.
+
+VISUAL IDENTITY — THINK BEFORE YOU STYLE:
+Before choosing colors or layout, ask: What does this business DO? Who are the customers?
+A bike shop needs energy and sport vibes. A law firm needs trust. A restaurant needs warmth.
+NEVER default to dark themes unless the business calls for it (gaming, nightclub).
+Most businesses need light backgrounds — they make products and text look better.
+
+SELF-CHECK — After creating each page/component, verify:
+- Can I read ALL text against its background? (white text on light bg = invisible)
+- Do form inputs have visible borders? (white inputs on white = invisible)
+- Is there a clear visual hierarchy? Most important content in 2 seconds?
+- Do interactive elements have hover/focus states?
+- Does the page work on a 375px phone screen?
+- Are loading, empty, and error states handled?
+
+INTEGRATION CHECK — Your code does NOT exist in isolation.
+Before finishing, verify these connections:
+- If you reference an API route (/api/products), verify the handler exists and uses that path.
+- If middleware checks a header (Authorization: Bearer), verify the frontend sends it.
+- If a page imports a component, verify the component file exists and is exported.
+- If you use an environment variable (process.env.STRIPE_KEY), verify it's in .env.example.
+- If Prisma schema defines a relation, verify the API actually includes/joins it.
+- If a webhook URL is configured (/api/webhooks/stripe), verify the handler parses the correct payload.
+Rule: NEVER assume a name, path, or variable exists — READ the code and match it exactly.
+
+PACKAGE VERIFICATION — Before using any import from a dependency:
+Run: cat node_modules/[package]/package.json | head -5 to verify the package is installed.
+Check the actual export names — don't assume API from memory.
 PROMPT,
-            verify: function (): ?string {
-                return is_file($this->fullPath . '/package.json') ? null : 'package.json not created';
-            },
-            timeout: 600,
-        );
-        $memory->completeStep('scaffold');
+                verify: function (): ?string {
+                    return is_file($this->fullPath.'/package.json') ? null : 'package.json not created';
+                },
+                timeout: 600,
+            );
+            $memory->completeStep('scaffold');
         } // end if !isStepDone('scaffold')
 
         // Step 3: Generate tests
         if ($memory->isStepDone('tests')) {
             Console::success('[2/4] Generating tests (already done)');
         } else {
-        $memory->startStep('tests');
-        $this->steps->runAi(
-            name: '[2/4] Generating tests',
-            complexity: Complexity::MEDIUM,
-            prompt: <<<PROMPT
+            $memory->startStep('tests');
+            $this->steps->runAi(
+                name: '[2/4] Generating tests',
+                complexity: Complexity::MEDIUM,
+                prompt: <<<'PROMPT'
 Create tests for this Node.js project. Read the project structure first to understand what exists.
 
 Use Jest or Vitest (whichever fits the project setup).
@@ -213,42 +241,42 @@ Create tests in __tests__/ or tests/ directory:
 IMPORTANT: Write ONLY tests that will PASS with the current codebase.
 Do NOT test features that don't exist.
 PROMPT,
-            verify: null,
-            skippable: true,
-            timeout: 300,
-        );
-        $memory->completeStep('tests');
+                verify: null,
+                skippable: true,
+                timeout: 300,
+            );
+            $memory->completeStep('tests');
         } // end if !isStepDone('tests')
 
         // Step 4: Run tests and fix
         if ($memory->isStepDone('tests_fixed')) {
             Console::success('[3/4] Running and fixing tests (already done)');
         } else {
-        $memory->startStep('tests_fixed');
-        $this->steps->runAi(
-            name: '[3/4] Running and fixing tests',
-            complexity: Complexity::MEDIUM,
-            prompt: <<<PROMPT
+            $memory->startStep('tests_fixed');
+            $this->steps->runAi(
+                name: '[3/4] Running and fixing tests',
+                complexity: Complexity::MEDIUM,
+                prompt: <<<'PROMPT'
 Run the project tests: npm test (or npx jest or npx vitest run)
 If any tests fail, analyze the output and fix either the test or the code.
 Do NOT delete tests — fix them. Up to 3 attempts.
 PROMPT,
-            verify: null,
-            skippable: true,
-            timeout: 300,
-        );
-        $memory->completeStep('tests_fixed');
+                verify: null,
+                skippable: true,
+                timeout: 300,
+            );
+            $memory->completeStep('tests_fixed');
         } // end if !isStepDone('tests_fixed')
 
         // Step 5: SETUP.md — developer handoff
         if ($memory->isStepDone('setup_md')) {
             Console::success('[4/4] Generating setup instructions (already done)');
         } else {
-        $memory->startStep('setup_md');
-        $this->steps->runAi(
-            name: '[4/4] Generating setup instructions',
-            complexity: Complexity::SIMPLE,
-            prompt: <<<PROMPT
+            $memory->startStep('setup_md');
+            $this->steps->runAi(
+                name: '[4/4] Generating setup instructions',
+                complexity: Complexity::SIMPLE,
+                prompt: <<<PROMPT
 Read the entire project you just built. Generate a SETUP.md file in the project root.
 
 PROJECT: {$desc}
@@ -273,11 +301,11 @@ SETUP.md must include:
 
 Write for a JUNIOR developer. Explain briefly when using technical terms.
 PROMPT,
-            verify: fn (): ?string => is_file($this->fullPath . '/SETUP.md') ? null : 'SETUP.md not created',
-            skippable: true,
-            timeout: 300,
-        );
-        $memory->completeStep('setup_md');
+                verify: fn (): ?string => is_file($this->fullPath.'/SETUP.md') ? null : 'SETUP.md not created',
+                skippable: true,
+                timeout: 300,
+            );
+            $memory->completeStep('setup_md');
         } // end if !isStepDone('setup_md')
 
         $this->steps->printSummary();
@@ -287,9 +315,9 @@ PROMPT,
 
     public function postSetup(string $directory): bool
     {
-        $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
 
-        if (is_file($fullPath . '/package.json')) {
+        if (is_file($fullPath.'/package.json')) {
             Console::spinner('Installing npm packages...');
             Console::exec('npm install', $fullPath);
         }
@@ -317,12 +345,12 @@ PROMPT,
 
         $node = Console::execSilent('node --version');
         if ($node['exit'] === 0) {
-            $versions[] = 'Node.js ' . trim($node['output']);
+            $versions[] = 'Node.js '.trim($node['output']);
         }
 
         $npm = Console::execSilent('npm --version');
         if ($npm['exit'] === 0) {
-            $versions[] = 'npm ' . trim($npm['output']);
+            $versions[] = 'npm '.trim($npm['output']);
         }
 
         return empty($versions) ? 'Node.js (latest)' : implode(', ', $versions);

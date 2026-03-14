@@ -33,10 +33,10 @@ final class FlutterStack implements StackInterface
     public function description(): string
     {
         return 'Cross-platform mobile apps (iOS + Android), web apps, '
-            . 'desktop apps — all from a single codebase. '
-            . 'Best for: client-facing mobile apps, delivery apps, '
-            . 'POS systems, fitness apps, social media. '
-            . 'Stack: Dart (latest), Flutter (latest), Riverpod/Bloc, Dio, Firebase/Supabase.';
+            .'desktop apps — all from a single codebase. '
+            .'Best for: client-facing mobile apps, delivery apps, '
+            .'POS systems, fitness apps, social media. '
+            .'Stack: Dart (latest), Flutter (latest), Riverpod/Bloc, Dio, Firebase/Supabase.';
     }
 
     public function preflight(): array
@@ -58,7 +58,7 @@ final class FlutterStack implements StackInterface
 
     public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool
     {
-        $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $this->fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
         $this->steps = new StepRunner($router, $this->fullPath);
 
         // NOTE: memory->init() is called AFTER flutter create
@@ -76,7 +76,7 @@ final class FlutterStack implements StackInterface
         $systemContext = $system->buildAiContext();
 
         // Check if we're resuming
-        $resuming = is_file($this->fullPath . '/pubspec.yaml');
+        $resuming = is_file($this->fullPath.'/pubspec.yaml');
 
         Console::line();
         if ($resuming) {
@@ -92,7 +92,7 @@ final class FlutterStack implements StackInterface
             $result = $parentRunner->runCommand(
                 name: '[1/5] Create Flutter project',
                 command: "flutter create {$directory} --org com.tessera --no-pub",
-                verify: fn (): ?string => is_file($this->fullPath . '/pubspec.yaml') ? null : 'pubspec.yaml not found',
+                verify: fn (): ?string => is_file($this->fullPath.'/pubspec.yaml') ? null : 'pubspec.yaml not found',
                 fixHint: "Run: flutter create {$directory} --org com.tessera",
             );
 
@@ -114,10 +114,10 @@ final class FlutterStack implements StackInterface
         if ($memory->isStepDone('scaffold')) {
             Console::success('[2/5] Configuring app structure and screens (already done)');
         } else {
-        $memory->startStep('scaffold');
-        $this->steps->runAi(
-            name: '[2/5] Configuring app structure and screens',
-            prompt: <<<PROMPT
+            $memory->startStep('scaffold');
+            $this->steps->runAi(
+                name: '[2/5] Configuring app structure and screens',
+                prompt: <<<PROMPT
 You are a SENIOR Flutter/Dart developer configuring a project for production.
 A Flutter project was just created with `flutter create`. Now make it production-ready.
 Think carefully about what THIS specific app needs.
@@ -193,23 +193,51 @@ STEP 2 — CONFIGURE:
 7. README.md with setup instructions, required accounts, architecture overview
 
 IMPORTANT: Use features appropriate for the detected Dart/Flutter version.
+
+VISUAL IDENTITY — THINK BEFORE YOU DESIGN:
+Before choosing colors or theme, ask: What does this app DO? Who uses it?
+A fitness app needs energy and bold colors. A banking app needs trust and calm blues.
+A food delivery app needs warmth and appetite. A productivity app needs clean minimalism.
+Design for the USER, not for developers. Light themes are standard for most mobile apps.
+
+SELF-CHECK — After creating each screen, verify:
+- Does every screen handle loading state? (shimmer/skeleton, not blank screen)
+- Does every screen handle empty state? (no orders yet, no products found)
+- Does every screen handle error state? (network failure, server error)
+- Are all interactive elements large enough for touch? (minimum 44px)
+- Does the screen look good on both phone and tablet?
+- Is the navigation intuitive? Can the user always go back?
+
+INTEGRATION CHECK — Your code does NOT exist in isolation.
+Before finishing, verify these connections:
+- If go_router defines a route ('/product/:id'), verify the screen file exists at the path you import.
+- If a screen reads a Riverpod provider, verify the provider exists and returns the expected type.
+- If a model has a fromJson factory, verify the API response field names match exactly.
+- If a screen navigates to another (context.push('/cart')), verify that route is defined in router.dart.
+- If pubspec.yaml lists a dependency, verify you actually import and use it.
+- If config.dart defines an API_URL, verify the HTTP client uses it.
+Rule: NEVER assume a route, provider, or field name — READ the code and match it exactly.
+
+PACKAGE VERIFICATION — Before using any import from a pub dependency:
+Run: cat pubspec.lock | grep -A2 "[package_name]" to verify it's installed.
+Check the actual API — don't assume class names or methods from memory.
 PROMPT,
-            verify: null,
-            skippable: true,
-            timeout: 600,
-            complexity: Complexity::COMPLEX,
-        );
-        $memory->completeStep('scaffold');
+                verify: null,
+                skippable: true,
+                timeout: 600,
+                complexity: Complexity::COMPLEX,
+            );
+            $memory->completeStep('scaffold');
         } // end if !isStepDone('scaffold')
 
         // Step 3: Generate tests
         if ($memory->isStepDone('tests')) {
             Console::success('[3/5] Generating tests (already done)');
         } else {
-        $memory->startStep('tests');
-        $this->steps->runAi(
-            name: '[3/5] Generating tests',
-            prompt: <<<PROMPT
+            $memory->startStep('tests');
+            $this->steps->runAi(
+                name: '[3/5] Generating tests',
+                prompt: <<<'PROMPT'
 Create Flutter/Dart tests for this project. Read the project first.
 
 test/ directory:
@@ -220,42 +248,42 @@ test/ directory:
 Use flutter_test and mocktail for mocking.
 IMPORTANT: Write ONLY tests that will PASS with the current codebase.
 PROMPT,
-            verify: null,
-            skippable: true,
-            timeout: 300,
-            complexity: Complexity::MEDIUM,
-        );
-        $memory->completeStep('tests');
+                verify: null,
+                skippable: true,
+                timeout: 300,
+                complexity: Complexity::MEDIUM,
+            );
+            $memory->completeStep('tests');
         } // end if !isStepDone('tests')
 
         // Step 4: Run tests and fix
         if ($memory->isStepDone('tests_fixed')) {
             Console::success('[4/5] Running and fixing tests (already done)');
         } else {
-        $memory->startStep('tests_fixed');
-        $this->steps->runAi(
-            name: '[4/5] Running and fixing tests',
-            prompt: <<<PROMPT
+            $memory->startStep('tests_fixed');
+            $this->steps->runAi(
+                name: '[4/5] Running and fixing tests',
+                prompt: <<<'PROMPT'
 Run the project tests with: flutter test
 If any tests fail, analyze the output and fix either the test or the code.
 Do NOT delete tests — fix them.
 PROMPT,
-            verify: null,
-            skippable: true,
-            timeout: 300,
-            complexity: Complexity::MEDIUM,
-        );
-        $memory->completeStep('tests_fixed');
+                verify: null,
+                skippable: true,
+                timeout: 300,
+                complexity: Complexity::MEDIUM,
+            );
+            $memory->completeStep('tests_fixed');
         } // end if !isStepDone('tests_fixed')
 
         // Step 5: SETUP.md — developer handoff
         if ($memory->isStepDone('setup_md')) {
             Console::success('[5/5] Generating setup instructions (already done)');
         } else {
-        $memory->startStep('setup_md');
-        $this->steps->runAi(
-            name: '[5/5] Generating setup instructions',
-            prompt: <<<PROMPT
+            $memory->startStep('setup_md');
+            $this->steps->runAi(
+                name: '[5/5] Generating setup instructions',
+                prompt: <<<PROMPT
 Read the entire project you just built. Generate a SETUP.md file in the project root.
 
 PROJECT: {$desc}
@@ -287,12 +315,12 @@ SETUP.md must include:
 
 Write for a JUNIOR developer. Explain mobile-specific concepts briefly.
 PROMPT,
-            verify: fn (): ?string => is_file($this->fullPath . '/SETUP.md') ? null : 'SETUP.md not created',
-            skippable: true,
-            timeout: 300,
-            complexity: Complexity::SIMPLE,
-        );
-        $memory->completeStep('setup_md');
+                verify: fn (): ?string => is_file($this->fullPath.'/SETUP.md') ? null : 'SETUP.md not created',
+                skippable: true,
+                timeout: 300,
+                complexity: Complexity::SIMPLE,
+            );
+            $memory->completeStep('setup_md');
         } // end if !isStepDone('setup_md')
 
         $this->steps->printSummary();
@@ -302,7 +330,7 @@ PROMPT,
 
     public function postSetup(string $directory): bool
     {
-        $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
 
         Console::spinner('Flutter pub get...');
         Console::exec('flutter pub get', $fullPath);

@@ -34,10 +34,10 @@ final class StaticStack implements StackInterface
     public function description(): string
     {
         return 'Simple landing pages, portfolio sites, event pages, '
-            . 'coming soon pages — no backend, no database. '
-            . 'Best for: quick one-off pages, campaigns, '
-            . 'personal portfolio sites, event invitations. '
-            . 'Stack: HTML5, Tailwind CSS (latest), Alpine.js, Vite. Deploy: Netlify/Vercel/GitHub Pages.';
+            .'coming soon pages — no backend, no database. '
+            .'Best for: quick one-off pages, campaigns, '
+            .'personal portfolio sites, event invitations. '
+            .'Stack: HTML5, Tailwind CSS (latest), Alpine.js, Vite. Deploy: Netlify/Vercel/GitHub Pages.';
     }
 
     public function preflight(): array
@@ -54,7 +54,7 @@ final class StaticStack implements StackInterface
 
     public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool
     {
-        $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $this->fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
         $this->steps = new StepRunner($router, $this->fullPath);
 
         $desc = $requirements['description'] ?? 'Landing page';
@@ -65,7 +65,7 @@ final class StaticStack implements StackInterface
         $systemContext = $system->buildAiContext();
 
         // Check if we're resuming
-        $resuming = is_dir($this->fullPath) && is_file($this->fullPath . '/.tessera/state.json');
+        $resuming = is_dir($this->fullPath) && is_file($this->fullPath.'/.tessera/state.json');
 
         Console::line();
         if ($resuming) {
@@ -91,10 +91,10 @@ final class StaticStack implements StackInterface
         if ($memory->isStepDone('scaffold')) {
             Console::success('[1/3] Creating website (already done)');
         } else {
-        $memory->startStep('scaffold');
-        $this->steps->runAi(
-            name: '[1/3] Creating website',
-            prompt: <<<PROMPT
+            $memory->startStep('scaffold');
+            $this->steps->runAi(
+                name: '[1/3] Creating website',
+                prompt: <<<PROMPT
 You are a SENIOR frontend developer building a static website from scratch.
 Think carefully about what THIS specific site needs before writing any code.
 
@@ -144,31 +144,55 @@ DESIGN — make it look like a REAL website a client would pay for:
 
 CONTENT: Write like a professional copywriter. Compelling headlines,
 clear value propositions, realistic testimonials with local-sounding names.
-PROMPT,
-            verify: function (): ?string {
-                if (is_file($this->fullPath . '/index.html')) {
-                    return null;
-                }
-                if (is_file($this->fullPath . '/package.json')) {
-                    return null;
-                }
 
-                return 'No index.html or package.json created';
-            },
-            timeout: 300,
-            complexity: Complexity::COMPLEX,
-        );
-        $memory->completeStep('scaffold');
+VISUAL IDENTITY — THINK BEFORE YOU STYLE:
+Before choosing colors, ask: What does this business DO? What emotion should the site evoke?
+A gym needs energy and bold contrasts. A spa needs calm and soft pastels. A tech startup needs
+clean minimalism. A bakery needs warmth and appetite.
+NEVER default to dark themes unless the business calls for it (gaming, nightclub, cinema).
+Most businesses need light backgrounds — they make content, photos, and CTAs stand out.
+
+SELF-CHECK — After creating each page, verify:
+- Can I read ALL text against its background? (white text on light bg = invisible)
+- Do buttons and links look clickable? (clear hover states, pointer cursor)
+- Does the contact form actually submit somewhere? (formspree action URL correct?)
+- Does navigation work on mobile? (hamburger opens/closes, links navigate correctly)
+- Is there a clear CTA above the fold on every page?
+- Does the site look professional enough that a client would pay for it?
+
+INTEGRATION CHECK — Your code does NOT exist in isolation.
+Before finishing, verify:
+- If index.html links to /about.html, verify about.html exists.
+- If a page includes a script (src="./main.js"), verify the file exists at that path.
+- If Alpine.js x-data references a function, verify it's defined.
+- If a contact form has action="https://formspree.io/f/xxx", note it in SETUP.md as needing configuration.
+- If Vite config lists multiple entries, verify each entry file exists.
+Rule: NEVER assume a file, path, or ID exists — check it.
+PROMPT,
+                verify: function (): ?string {
+                    if (is_file($this->fullPath.'/index.html')) {
+                        return null;
+                    }
+                    if (is_file($this->fullPath.'/package.json')) {
+                        return null;
+                    }
+
+                    return 'No index.html or package.json created';
+                },
+                timeout: 300,
+                complexity: Complexity::COMPLEX,
+            );
+            $memory->completeStep('scaffold');
         } // end if !isStepDone('scaffold')
 
         // Step 2: Validate and polish
         if ($memory->isStepDone('polish')) {
             Console::success('[2/3] Validating and polishing (already done)');
         } else {
-        $memory->startStep('polish');
-        $this->steps->runAi(
-            name: '[2/3] Validating and polishing',
-            prompt: <<<PROMPT
+            $memory->startStep('polish');
+            $this->steps->runAi(
+                name: '[2/3] Validating and polishing',
+                prompt: <<<'PROMPT'
 Review the generated static site thoroughly. You are a senior frontend developer doing a code review.
 
 Check and fix:
@@ -182,22 +206,22 @@ Check and fix:
 8. Contact form (if exists) has action pointing to formspree or netlify forms
 9. Fix any issues found — do not just list them
 PROMPT,
-            verify: null,
-            skippable: true,
-            timeout: 120,
-            complexity: Complexity::MEDIUM,
-        );
-        $memory->completeStep('polish');
+                verify: null,
+                skippable: true,
+                timeout: 120,
+                complexity: Complexity::MEDIUM,
+            );
+            $memory->completeStep('polish');
         } // end if !isStepDone('polish')
 
         // Step 3: SETUP.md — developer handoff
         if ($memory->isStepDone('setup_md')) {
             Console::success('[3/3] Generating setup instructions (already done)');
         } else {
-        $memory->startStep('setup_md');
-        $this->steps->runAi(
-            name: '[3/3] Generating setup instructions',
-            prompt: <<<PROMPT
+            $memory->startStep('setup_md');
+            $this->steps->runAi(
+                name: '[3/3] Generating setup instructions',
+                prompt: <<<PROMPT
 Read the site you just built. Generate a SETUP.md file in the project root.
 
 PROJECT: {$desc}
@@ -228,12 +252,12 @@ SETUP.md must include:
 
 Write for someone who may have NEVER deployed a website before.
 PROMPT,
-            verify: fn (): ?string => is_file($this->fullPath . '/SETUP.md') ? null : 'SETUP.md not created',
-            skippable: true,
-            timeout: 120,
-            complexity: Complexity::SIMPLE,
-        );
-        $memory->completeStep('setup_md');
+                verify: fn (): ?string => is_file($this->fullPath.'/SETUP.md') ? null : 'SETUP.md not created',
+                skippable: true,
+                timeout: 120,
+                complexity: Complexity::SIMPLE,
+            );
+            $memory->completeStep('setup_md');
         } // end if !isStepDone('setup_md')
 
         $this->steps->printSummary();
@@ -243,9 +267,9 @@ PROMPT,
 
     public function postSetup(string $directory): bool
     {
-        $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
 
-        if (file_exists($fullPath . '/package.json')) {
+        if (file_exists($fullPath.'/package.json')) {
             Console::spinner('Installing npm packages...');
             Console::exec('npm install', $fullPath);
         }
@@ -272,7 +296,7 @@ PROMPT,
     {
         $node = Console::execSilent('node --version');
         if ($node['exit'] === 0) {
-            return 'Node.js ' . trim($node['output']);
+            return 'Node.js '.trim($node['output']);
         }
 
         return 'Node.js (latest)';
