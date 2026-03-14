@@ -178,7 +178,7 @@ final class AiTool
                 if ((time() - $startTime) > $timeout) {
                     proc_terminate($process);
 
-                    return new AiResponse(false, $output, 'Timeout after ' . $timeout . 's', 124);
+                    return new AiResponse(false, $output, 'Timeout after '.$timeout.'s', 124);
                 }
 
                 usleep(100_000); // 100ms
@@ -215,13 +215,63 @@ final class AiTool
 
     private static function checkAvailable(string $command): ?string
     {
-        $output = [];
-        $exitCode = 0;
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
 
-        exec($command . ' 2>&1', $output, $exitCode);
+        $process = proc_open($command, $descriptors, $pipes, null, self::cleanEnv());
 
-        if ($exitCode === 0 && ! empty($output)) {
-            return trim(implode(' ', $output));
+        if (! is_resource($process)) {
+            return null;
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $output = '';
+        $startTime = time();
+        $timeout = 5; // seconds — version check should be instant
+
+        while (true) {
+            $status = proc_get_status($process);
+
+            $chunk = stream_get_contents($pipes[1]);
+            if ($chunk !== false) {
+                $output .= $chunk;
+            }
+
+            if (! $status['running']) {
+                break;
+            }
+
+            if ((time() - $startTime) > $timeout) {
+                proc_terminate($process);
+                fclose($pipes[1]);
+                fclose($pipes[2]);
+                proc_close($process);
+
+                return null;
+            }
+
+            usleep(100_000);
+        }
+
+        // Final read
+        $chunk = stream_get_contents($pipes[1]);
+        if ($chunk !== false) {
+            $output .= $chunk;
+        }
+
+        $exitCode = $status['exitcode'] ?? -1;
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($process);
+
+        if ($exitCode === 0 && $output !== '') {
+            return trim($output);
         }
 
         return null;
