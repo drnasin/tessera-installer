@@ -33,7 +33,7 @@ final class NewCommand
     public function __construct(string $directory, bool $force = false)
     {
         $this->directory = $directory;
-        $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $this->fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
         $this->force = $force;
         $this->system = SystemInfo::detect();
     }
@@ -96,6 +96,9 @@ final class NewCommand
         Console::success("AI: {$toolNames}");
         Console::success("OS: {$this->system->os()} ({$this->system->packageManager()})");
 
+        $dbNames = array_keys($this->system->databases());
+        Console::success('DB: '.(empty($dbNames) ? 'SQLite (built-in)' : implode(', ', $dbNames)));
+
         // Show intelligent routing
         Console::line();
         Console::bold('AI routing:');
@@ -113,7 +116,7 @@ final class NewCommand
             if ($check['ready']) {
                 Console::success($stack->label());
             } else {
-                Console::line("  \033[90m{$stack->label()} — missing: " . implode(', ', $check['missing']) . "\033[0m");
+                Console::line("  \033[90m{$stack->label()} — missing: ".implode(', ', $check['missing'])."\033[0m");
             }
         }
 
@@ -135,7 +138,7 @@ final class NewCommand
      */
     private function handleExistingDirectory(): ?int
     {
-        $stateFile = $this->fullPath . DIRECTORY_SEPARATOR . '.tessera' . DIRECTORY_SEPARATOR . 'state.json';
+        $stateFile = $this->fullPath.DIRECTORY_SEPARATOR.'.tessera'.DIRECTORY_SEPARATOR.'state.json';
 
         // Check if there's a previous install we can resume
         if (is_file($stateFile)) {
@@ -205,7 +208,7 @@ final class NewCommand
     /**
      * Build the project: decide stack, check deps, scaffold.
      *
-     * @param array<string, mixed> $requirements
+     * @param  array<string, mixed>  $requirements
      */
     private function buildProject(array $requirements): int
     {
@@ -423,6 +426,7 @@ PROMPT;
 
         // Extract structured requirements via JSON
         $historyText = $this->formatConversation($conversation);
+        $availableDbs = implode(', ', array_keys($this->system->databases())) ?: 'sqlite';
 
         $extractPrompt = <<<PROMPT
 From this conversation, extract project requirements. Respond with ONLY valid JSON (no markdown, no explanation):
@@ -438,9 +442,17 @@ From this conversation, extract project requirements. Respond with ONLY valid JS
     "design_style": "modern, clean, professional",
     "design_colors": "brand colors or preferences if mentioned",
     "payment_providers": [],
+    "database": "sqlite",
     "expected_users": "low",
     "special": ""
 }
+
+IMPORTANT for database:
+- Available databases on this system: {$availableDbs}
+- Default to "sqlite" for simple sites, portfolios, blogs
+- Use "mysql" or "mariadb" if available AND the project is e-commerce, has many users, or needs production scale
+- Use "postgresql" only if explicitly requested or the project needs advanced queries
+- ONLY choose databases that are listed as available above
 
 IMPORTANT for payment_providers:
 - Use exact provider names: "stripe", "corvuspay", "wspay", "klarna", "mollie", "paypal", "square", "gocardless", "bank_transfer"
@@ -482,6 +494,7 @@ PROMPT;
             'design_style' => 'modern, clean',
             'design_colors' => '',
             'payment_providers' => [],
+            'database' => 'sqlite',
             'expected_users' => 'low',
             'conversation' => $conversation,
         ];
@@ -576,7 +589,7 @@ PROMPT;
     /**
      * Let AI install missing dependencies for the current OS.
      *
-     * @param array<string> $missing
+     * @param  array<string>  $missing
      */
     private function autoInstallDependencies(array $missing): void
     {
@@ -607,7 +620,7 @@ PROMPT;
         if ($response->success) {
             Console::success('Dependency installation complete');
         } else {
-            Console::warn('Some dependencies may not have been installed: ' . $response->error);
+            Console::warn('Some dependencies may not have been installed: '.$response->error);
         }
     }
 
@@ -650,7 +663,7 @@ PROMPT;
         Console::line();
 
         // Check if SETUP.md was generated
-        $setupPath = $this->fullPath . '/SETUP.md';
+        $setupPath = $this->fullPath.'/SETUP.md';
         if (is_file($setupPath)) {
             Console::bold('  IMPORTANT: Read SETUP.md for configuration steps!');
             Console::line('  It contains API keys, payment setup, and production checklist.');
@@ -665,7 +678,7 @@ PROMPT;
     private function formatConversation(array $conversation): string
     {
         return implode("\n", array_map(
-            fn (array $entry): string => ($entry['role'] === 'junior' ? 'JUNIOR' : 'AI') . ': ' . $entry['text'],
+            fn (array $entry): string => ($entry['role'] === 'junior' ? 'JUNIOR' : 'AI').': '.$entry['text'],
             $conversation,
         ));
     }
@@ -694,6 +707,7 @@ PROMPT;
             'design_style' => $json['design_style'] ?? 'modern, clean',
             'design_colors' => $json['design_colors'] ?? '',
             'payment_providers' => $json['payment_providers'] ?? [],
+            'database' => $json['database'] ?? 'sqlite',
             'expected_users' => $json['expected_users'] ?? 'low',
             'special' => $json['special'] ?? '',
             'conversation' => $conversation,

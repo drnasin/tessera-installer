@@ -35,6 +35,9 @@ final class LaravelStack implements StackInterface
     /** @var array<string, mixed> */
     private array $requirements;
 
+    /** Timeout in seconds for AI steps. Override via TESSERA_AI_TIMEOUT env var. */
+    private int $aiTimeout;
+
     public function name(): string
     {
         return 'laravel';
@@ -48,10 +51,10 @@ final class LaravelStack implements StackInterface
     public function description(): string
     {
         return 'Websites, CMS, e-commerce, admin panels, CRUD applications, '
-            . 'multi-language sites, blog platforms, booking systems. '
-            . 'Best for: content websites, web shops, '
-            . 'business applications, internal tools, dashboards. '
-            . 'Stack: PHP 8.2+, Laravel (latest), Filament (latest), Livewire, Tailwind, MySQL/SQLite.';
+            .'multi-language sites, blog platforms, booking systems. '
+            .'Best for: content websites, web shops, '
+            .'business applications, internal tools, dashboards. '
+            .'Stack: PHP 8.2+, Laravel (latest), Filament (latest), Livewire, Tailwind, MySQL/SQLite.';
     }
 
     public function preflight(): array
@@ -59,7 +62,7 @@ final class LaravelStack implements StackInterface
         $missing = [];
 
         if (version_compare(PHP_VERSION, '8.2.0', '<')) {
-            $missing[] = 'PHP 8.2+ (found: ' . PHP_VERSION . ')';
+            $missing[] = 'PHP 8.2+ (found: '.PHP_VERSION.')';
         }
 
         $composer = Console::execSilent('composer --version');
@@ -72,15 +75,21 @@ final class LaravelStack implements StackInterface
 
     public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool
     {
-        $this->fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $this->fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
         $this->router = $router;
         $this->system = $system;
         $this->memory = $memory;
         $this->requirements = $requirements;
         $this->steps = new StepRunner($router, $this->fullPath);
 
+        // AI timeout: env override → default 900s (COMPLEX steps need room to breathe)
+        $envTimeout = getenv('TESSERA_AI_TIMEOUT');
+        $this->aiTimeout = ($envTimeout !== false && (int) $envTimeout > 0)
+            ? (int) $envTimeout
+            : 900;
+
         // Check if we're resuming a previous install
-        $resuming = is_file($this->fullPath . '/artisan');
+        $resuming = is_file($this->fullPath.'/artisan');
 
         Console::line();
         if ($resuming) {
@@ -97,7 +106,7 @@ final class LaravelStack implements StackInterface
             $result = $parentRunner->runCommand(
                 name: '[1/8] Create Laravel project',
                 command: "composer create-project laravel/laravel {$directory} --prefer-dist --no-interaction",
-                verify: fn (): ?string => is_file($this->fullPath . '/artisan') ? null : 'artisan file not found',
+                verify: fn (): ?string => is_file($this->fullPath.'/artisan') ? null : 'artisan file not found',
                 fixHint: "Run: composer create-project laravel/laravel {$directory} --prefer-dist",
             );
 
@@ -159,6 +168,11 @@ final class LaravelStack implements StackInterface
             $this->memory->completeStep('structure');
         }
 
+        // Step 5b: Configure database
+        Console::spinner('Configuring database...');
+        $this->configureDatabase();
+        Console::success('Database configured: '.($this->requirements['database'] ?? 'sqlite'));
+
         // Step 6: AI builds everything
         Console::line();
         Console::bold('[6/8] AI is building your project — this is the big one...');
@@ -177,7 +191,7 @@ final class LaravelStack implements StackInterface
 
     public function postSetup(string $directory): bool
     {
-        $fullPath = getcwd() . DIRECTORY_SEPARATOR . $directory;
+        $fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
 
         Console::spinner('Running migrations...');
         Console::exec('php artisan migrate --force', $fullPath);
@@ -295,7 +309,7 @@ final class LaravelStack implements StackInterface
             command: 'php artisan filament:install --panels --no-interaction',
             verify: function (): ?string {
                 // Check AdminPanelProvider exists
-                $path = $this->fullPath . '/app/Providers/Filament/AdminPanelProvider.php';
+                $path = $this->fullPath.'/app/Providers/Filament/AdminPanelProvider.php';
 
                 return is_file($path) ? null : 'AdminPanelProvider not created';
             },
@@ -332,6 +346,59 @@ PROMPT,
             skippable: true,
         );
 
+        // Create Curator migration (curator:install is interactive, so we create it manually)
+        $this->steps->run(
+            name: 'Create Curator migration',
+            execute: function (): bool {
+                $migrationPath = $this->fullPath.'/database/migrations/'.date('Y_m_d_His').'_create_curator_table.php';
+
+                return (bool) file_put_contents($migrationPath, <<<'MIGRATION'
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('curator', function (Blueprint $table) {
+            $table->id();
+            $table->string('disk');
+            $table->string('directory')->nullable();
+            $table->string('visibility')->default('public');
+            $table->string('name');
+            $table->string('path')->index();
+            $table->unsignedInteger('width')->nullable();
+            $table->unsignedInteger('height')->nullable();
+            $table->unsignedInteger('size')->nullable();
+            $table->string('type');
+            $table->string('ext');
+            $table->string('alt')->nullable();
+            $table->string('title')->nullable();
+            $table->text('description')->nullable();
+            $table->text('caption')->nullable();
+            $table->text('pretty_name')->nullable();
+            $table->text('exif')->nullable();
+            $table->longText('curations')->nullable();
+            $table->unsignedBigInteger('tenant_id')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('curator');
+    }
+};
+MIGRATION);
+            },
+            verify: fn (): ?string => ! empty(glob($this->fullPath.'/database/migrations/*_create_curator_table.php'))
+                ? null
+                : 'Curator migration not created',
+        );
+
         // Configure CuratorPlugin in AdminPanelProvider via AI
         $this->steps->runAi(
             name: 'Configure Filament plugins',
@@ -347,7 +414,7 @@ And add ->plugin(CuratorPlugin::make()) to the panel configuration chain.
 Also set the panel timezone to Europe/Zagreb and locale to hr.
 PROMPT,
             verify: function (): ?string {
-                $content = @file_get_contents($this->fullPath . '/app/Providers/Filament/AdminPanelProvider.php');
+                $content = @file_get_contents($this->fullPath.'/app/Providers/Filament/AdminPanelProvider.php');
                 if ($content === false) {
                     return 'AdminPanelProvider not found';
                 }
@@ -375,21 +442,21 @@ PROMPT,
                 'command' => 'php artisan vendor:publish --provider="Spatie\\Honeypot\\HoneypotServiceProvider" --tag="honeypot-config"',
                 'check' => 'config/honeypot.php',
             ],
-            'filament-curator' => [
-                'command' => 'php artisan vendor:publish --tag="curator-migrations"',
-                'check' => null,
+            'filament-curator-config' => [
+                'command' => 'php artisan vendor:publish --provider="Awcodes\Curator\CuratorServiceProvider"',
+                'check' => 'config/curator.php',
             ],
         ];
 
         foreach ($publishes as $name => $config) {
             $this->steps->runCommand(
                 name: "Publish: {$name}",
-                command: $config['command'] . ' --no-interaction',
+                command: $config['command'].' --no-interaction',
                 verify: $config['check']
-                    ? fn (): ?string => is_file($this->fullPath . '/' . $config['check']) ? null : "{$config['check']} not found"
+                    ? fn (): ?string => is_file($this->fullPath.'/'.$config['check']) ? null : "{$config['check']} not found"
                     : null,
                 skippable: true,
-                fixHint: 'Run: ' . $config['command'],
+                fixHint: 'Run: '.$config['command'],
             );
         }
 
@@ -407,14 +474,17 @@ PROMPT,
                     'app/Core/Http',
                     'app/Core/Ai',
                     'app/Modules',
+                    'app/Filament/Support',
                     'resources/views/themes/default/layouts',
+                    'resources/views/themes/default/templates',
                     'resources/views/themes/default/blocks',
                     'resources/views/themes/default/partials',
+                    'resources/views/components/layouts',
                     '.ai',
                 ];
 
                 foreach ($dirs as $dir) {
-                    $path = $this->fullPath . '/' . $dir;
+                    $path = $this->fullPath.'/'.$dir;
                     if (! is_dir($path)) {
                         if (! @mkdir($path, 0755, true)) {
                             return false;
@@ -422,9 +492,12 @@ PROMPT,
                     }
                 }
 
+                // Create TranslatableFields helper for Filament admin
+                $this->createTranslatableFieldsHelper();
+
                 return true;
             },
-            verify: fn (): ?string => is_dir($this->fullPath . '/app/Core/Models') ? null : 'Core directories not created',
+            verify: fn (): ?string => is_dir($this->fullPath.'/app/Core/Models') ? null : 'Core directories not created',
         );
     }
 
@@ -433,7 +506,7 @@ PROMPT,
      */
     private function detectVersions(): string
     {
-        $lockFile = $this->fullPath . '/composer.lock';
+        $lockFile = $this->fullPath.'/composer.lock';
 
         if (! is_file($lockFile)) {
             return 'Laravel (latest) with Filament (latest)';
@@ -442,7 +515,7 @@ PROMPT,
         $lock = json_decode((string) file_get_contents($lockFile), true);
         $packages = array_merge($lock['packages'] ?? [], $lock['packages-dev'] ?? []);
 
-        $versions = ['PHP ' . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION];
+        $versions = ['PHP '.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION];
         $detect = ['laravel/framework' => 'Laravel', 'filament/filament' => 'Filament', 'livewire/livewire' => 'Livewire'];
 
         foreach ($packages as $pkg) {
@@ -451,7 +524,7 @@ PROMPT,
                 $ver = ltrim($pkg['version'] ?? '', 'v');
                 // Extract major version (e.g. "12.5.3" → "12")
                 $major = explode('.', $ver)[0];
-                $versions[] = $detect[$name] . ' ' . $major;
+                $versions[] = $detect[$name].' '.$major;
             }
         }
 
@@ -477,11 +550,11 @@ PROMPT,
         if ($this->memory->isStepDone('core_models')) {
             Console::success('Creating database models and services (already done)');
         } else {
-        $this->memory->startStep('core_models');
-        $this->steps->runAi(
-            name: 'Creating database models and services',
-            complexity: Complexity::COMPLEX,
-            prompt: <<<PROMPT
+            $this->memory->startStep('core_models');
+            $this->steps->runAi(
+                name: 'Creating database models and services',
+                complexity: Complexity::COMPLEX,
+                prompt: <<<PROMPT
 You are a SENIOR Laravel developer building a Tessera CMS project from scratch.
 Think carefully about what THIS specific project needs before writing any code.
 
@@ -509,15 +582,22 @@ Before creating anything, reason about what this project needs:
 STEP 2 — ALWAYS CREATE (every Tessera project has these):
 1. CORE MODELS in app/Core/Models/:
    - Page.php (title, slug, meta_title, meta_description, og_image, is_published, published_at)
+     Use HasTranslations for: title, meta_title, meta_description
+     slug is NOT translatable — it's a plain string column
    - Block.php (page_id, type, data JSON, order, is_visible)
-     CRITICAL: Block.data is a JSON column. Each block type stores its own structure.
-     Example: hero block data = {"heading": "...", "subheading": "...", "cta_text": "...", "cta_url": "...", "background_image": "..."}
+     Block.data is a JSON column cast as 'array'. Each block type stores its own structure.
+     For multilingual projects, store translations INSIDE each data field as locale-keyed arrays.
+     The Block model must provide a method that resolves these locale-keyed arrays to the current
+     locale's value, so that blade views receive plain strings instead of arrays.
+     PageRenderer must call this resolution before passing blocks to views.
    - Navigation.php (label, url, location, parent_id, order, is_active)
+     Use HasTranslations for: label, url
 
 2. MIGRATIONS for all models (use timestamps, soft deletes where appropriate)
 
 3. SERVICES in app/Core/Services/:
    - PageRenderer.php — resolves page by slug, loads blocks, renders with theme
+     Must resolve block data translations before passing to views (see Block model above)
    - BlockRegistry.php — maps block type string to blade view path
    - ThemeManager.php — returns active theme name
 
@@ -526,8 +606,22 @@ STEP 2 — ALWAYS CREATE (every Tessera project has these):
    - module_active(string \$module): checks if a module directory exists
 
 5. PageController in app/Core/Http/ — catch-all for /{slug?}
+   The default slug must match the homepage slug used in the seeder.
 
 6. Register helpers autoload in composer.json "files" array
+
+7. LOCALE MIDDLEWARE — create a middleware that reads a locale query parameter,
+   validates it against configured supported locales, persists the choice in the session,
+   and sets the app locale. Register it in bootstrap/app.php as web middleware.
+
+8. Set .env: APP_LOCALE and APP_FALLBACK_LOCALE to the project's PRIMARY language
+   (must match the language of the content in the seeder — e.g., 'hr' for Croatian projects)
+
+VERIFICATION PRINCIPLES (apply throughout):
+- Every class import must resolve to an actual class in the installed package version. If unsure, check the package source.
+- Route closures that receive models via route model binding must type-hint their parameters.
+- Livewire component registrations must use fully-qualified class names (not relative namespace paths that could conflict with the Livewire package namespace).
+- All code must work correctly when the locale is switched — verify mentally by tracing the data flow.
 
 STEP 3 — IF E-COMMERCE ({$shop}):
 Create a full shop module in app/Modules/Shop/:
@@ -535,7 +629,7 @@ Create a full shop module in app/Modules/Shop/:
 - Enums: OrderStatus, PaymentStatus, CouponType
 - PaymentGateway interface in Payments/ with implementations for: {$payments}
   Each gateway must have: charge(), refund(), webhookHandler(), getConfigKeys()
-  getConfigKeys() returns array of .env keys needed (e.g., ['STRIPE_KEY', 'STRIPE_SECRET', 'STRIPE_WEBHOOK_SECRET'])
+  getConfigKeys() returns array of .env keys needed
 - ShippingCalculator interface + zone-based implementation
 - Livewire components: ProductCard, ProductFilter, CartWidget, CartPage, Checkout
 - Shop routes in routes/shop.php (products, cart, checkout, webhooks)
@@ -545,34 +639,34 @@ Create a full shop module in app/Modules/Shop/:
 
 IMPORTANT:
 - declare(strict_types=1), typed properties, return types EVERYWHERE
-- Use SQLite as default database
+- The database is already configured in .env — do NOT change it. Use whatever DB_CONNECTION is set.
 - Every Livewire component must have a corresponding blade view
 - Payment gateways must define getConfigKeys() so we can tell the developer what to configure
 PROMPT,
-            verify: function (): ?string {
-                if (! is_file($this->fullPath . '/app/Core/Models/Page.php')) {
-                    return 'Page model not created';
-                }
-                if (! is_file($this->fullPath . '/app/Core/Services/PageRenderer.php')) {
-                    return 'PageRenderer not created';
-                }
+                verify: function (): ?string {
+                    if (! is_file($this->fullPath.'/app/Core/Models/Page.php')) {
+                        return 'Page model not created';
+                    }
+                    if (! is_file($this->fullPath.'/app/Core/Services/PageRenderer.php')) {
+                        return 'PageRenderer not created';
+                    }
 
-                return null;
-            },
-            timeout: 600,
-        );
-        $this->memory->completeStep('core_models');
+                    return null;
+                },
+                timeout: $this->aiTimeout,
+            );
+            $this->memory->completeStep('core_models');
         } // end if !isStepDone('core_models')
 
         // Step B: Theme views
         if ($this->memory->isStepDone('theme')) {
             Console::success('Designing frontend theme and pages (already done)');
         } else {
-        $this->memory->startStep('theme');
-        $this->steps->runAi(
-            name: 'Designing frontend theme and pages',
-            complexity: Complexity::COMPLEX,
-            prompt: <<<PROMPT
+            $this->memory->startStep('theme');
+            $this->steps->runAi(
+                name: 'Designing frontend theme and pages',
+                complexity: Complexity::COMPLEX,
+                prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Core models and services are already created.
 Read the Block model and BlockRegistry to understand the data flow.
 
@@ -596,10 +690,15 @@ CREATE:
 1. THEME LAYOUT in resources/views/themes/default/:
    - layouts/master.blade.php — HTML5, Tailwind 4 (via @vite), @livewireStyles/@livewireScripts
    - partials/header.blade.php — sticky nav, mobile hamburger (Alpine.js x-data), logo, navigation items from DB
+     If e-commerce, include the cart widget Livewire component. Each interactive element (cart, login, etc.)
+     must appear exactly ONCE — don't duplicate functionality between a Livewire component and a static link.
    - partials/footer.blade.php — columns: links, contact info, social. Copyright year.
+   - templates/default.blade.php — @extends master, loops through blocks
+   - templates/full-width.blade.php — same as default (create BOTH templates)
 
 2. BLOCK VIEWS in resources/views/themes/default/blocks/:
    Each block view receives \$block (Block model). Access data via \$block->data['key'].
+   PageRenderer already resolves translations, so \$block->data['heading'] returns a plain string.
 
    For EVERY block view you create, document the expected data keys as a comment at the top:
    {{-- Data keys: heading (string), subheading (string), cta_text (string), cta_url (string), background_image (int|string) --}}
@@ -614,11 +713,26 @@ CREATE:
    - faq-accordion.blade.php — collapsible items (Alpine.js)
    - gallery-masonry.blade.php — grid of images from Curator
    - testimonials.blade.php — customer reviews with name, text, rating
+   - newsletter.blade.php — email input + subscribe button
    - Add MORE block types if THIS project needs them (e.g., menu-list for restaurant, pricing-table for SaaS, team-members, etc.)
 
-3. Routing: catch-all /{slug?} in bootstrap/app.php (AFTER Filament routes, in 'then:' callback)
+3. IF E-COMMERCE: Shop views (resources/views/shop/, resources/views/components/layouts/shop.blade.php)
+   Shop pages must look like they belong to the same website. They must share the same
+   header, footer, and visual style as the CMS pages. Do not create a separate design for shop.
 
-4. config/platform.php — site_name, default_theme, supported_locales
+4. Routing: catch-all /{slug?} in bootstrap/app.php (AFTER Filament routes, in 'then:' callback)
+
+5. config/platform.php — site_name, default_theme, supported_locales, address, contact_phone, contact_email, social links
+
+6. VISUAL CONSISTENCY: Verify every UI element is readable on its background (e.g., white inputs on
+   white backgrounds are invisible — add contrast). Test mentally by imagining the page rendered.
+
+7. NULL-SAFE CONTENT: All blade views must handle null/empty data gracefully. Use null coalescing
+   (\$block->data['key'] ?? '') for all data access. RichEditor/TipTap content MUST never be null —
+   use empty string defaults. Blade {!! !!} output on null content can crash renderers.
+
+8. MULTILINGUAL: All hardcoded text in templates must be locale-aware for all configured languages.
+   Navigation labels and URLs come from the DB (HasTranslations) so they switch automatically.
 
 DESIGN — make it look like a REAL website, not a template:
 - Style: {$designStyle}
@@ -633,28 +747,28 @@ DESIGN — make it look like a REAL website, not a template:
 - Images: use curator_url(\$block->data['image']) helper for all media
 - ALL content language: {$langs}
 PROMPT,
-            verify: function (): ?string {
-                if (! is_file($this->fullPath . '/resources/views/themes/default/layouts/master.blade.php')) {
-                    return 'Master layout not created';
-                }
+                verify: function (): ?string {
+                    if (! is_file($this->fullPath.'/resources/views/themes/default/layouts/master.blade.php')) {
+                        return 'Master layout not created';
+                    }
 
-                return null;
-            },
-            skippable: true,
-            timeout: 600,
-        );
-        $this->memory->completeStep('theme');
+                    return null;
+                },
+                skippable: true,
+                timeout: $this->aiTimeout,
+            );
+            $this->memory->completeStep('theme');
         } // end if !isStepDone('theme')
 
         // Step C: Filament resources
         if ($this->memory->isStepDone('admin')) {
             Console::success('Building admin panel (already done)');
         } else {
-        $this->memory->startStep('admin');
-        $this->steps->runAi(
-            name: 'Building admin panel',
-            complexity: Complexity::COMPLEX,
-            prompt: <<<PROMPT
+            $this->memory->startStep('admin');
+            $this->steps->runAi(
+                name: 'Building admin panel',
+                complexity: Complexity::COMPLEX,
+                prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Models, theme, and block views are already created.
 
 CRITICAL TASK: Read EVERY block blade view you created in resources/views/themes/default/blocks/.
@@ -671,6 +785,12 @@ Builder\Block::make('hero')->schema([
     CuratorPicker::make('background_image'),
 ])
 
+IMPORTANT — VERIFY ALL IMPORTS:
+Before using any Filament class, verify the namespace is correct for the INSTALLED Filament version.
+Filament's namespace structure changes between major versions. Check the actual source files in
+vendor/filament/ if you're unsure whether a class is in Filament\Actions, Filament\Tables\Actions, etc.
+A wrong namespace causes a fatal "Class not found" error that breaks the entire admin.
+
 CREATE:
 1. FILAMENT RESOURCES:
    - PageResource with tabs:
@@ -681,6 +801,29 @@ CREATE:
      * SEO tab: meta_title, meta_description, og_image (CuratorPicker)
      * Settings tab: is_published, published_at, slug (auto-generated from title)
    - NavigationResource — CRUD with location (header/footer), parent_id, order, active toggle
+
+     TRANSLATABLE FIELDS — A helper class already exists at app/Filament/Support/TranslatableFields.php.
+     You MUST use it for ALL models that use Spatie HasTranslations. It generates locale tabs automatically.
+
+     Usage in Resource form:
+       use App\Filament\Support\TranslatableFields;
+
+       TranslatableFields::tabs(fn (string $locale) => [
+           TranslatableFields::field('title', $locale, 'Title', required: true),
+           TranslatableFields::field('meta_description', $locale, 'Meta Description', 'textarea'),
+       ])
+
+     For block Builder fields, use blockTabs() and blockField() instead (dot notation storage):
+       TranslatableFields::blockTabs(fn (string $locale) => [
+           TranslatableFields::blockField('heading', $locale, 'Heading', required: true),
+       ])
+
+     In Create pages, use mutateFormDataBeforeCreate() with TranslatableFields::collectTranslations().
+     In Edit pages, use mutateFormDataBeforeSave() with TranslatableFields::saveTranslations().
+     Read the helper class for full API documentation.
+
+     WARNING: Do NOT bind a plain TextInput directly to a HasTranslations attribute —
+     it will show "[object Object]" instead of text. Always use TranslatableFields.
 
 2. IF E-COMMERCE ({$shop}):
    - ProductResource — name, slug, description, price, images, category, variants, active toggle
@@ -699,33 +842,33 @@ CREATE:
 IMPORTANT: The admin and frontend MUST be in sync. If a block view reads a key,
 the admin MUST have a field that writes to that key. No exceptions.
 PROMPT,
-            verify: function (): ?string {
-                // Check for any Resource file in Filament dir
-                $dir = $this->fullPath . '/app/Filament/Resources';
+                verify: function (): ?string {
+                    // Check for any Resource file in Filament dir
+                    $dir = $this->fullPath.'/app/Filament/Resources';
 
-                if (! is_dir($dir)) {
-                    return 'Filament Resources directory not created';
-                }
+                    if (! is_dir($dir)) {
+                        return 'Filament Resources directory not created';
+                    }
 
-                $files = glob($dir . '/*.php');
+                    $files = glob($dir.'/*.php');
 
-                return ! empty($files) ? null : 'No Filament resources created';
-            },
-            skippable: true,
-            timeout: 600,
-        );
-        $this->memory->completeStep('admin');
+                    return ! empty($files) ? null : 'No Filament resources created';
+                },
+                skippable: true,
+                timeout: $this->aiTimeout,
+            );
+            $this->memory->completeStep('admin');
         } // end if !isStepDone('admin')
 
         // Step D: Content & pages
         if ($this->memory->isStepDone('content')) {
             Console::success('Writing content and seeding data (already done)');
         } else {
-        $this->memory->startStep('content');
-        $this->steps->runAi(
-            name: 'Writing content and seeding data',
-            complexity: Complexity::MEDIUM,
-            prompt: <<<PROMPT
+            $this->memory->startStep('content');
+            $this->steps->runAi(
+                name: 'Writing content and seeding data',
+                complexity: Complexity::MEDIUM,
+                prompt: <<<PROMPT
 CONTINUE working on the Tessera project. Models, views, admin, and block views are all set up.
 
 PROJECT: {$desc}
@@ -741,13 +884,19 @@ Decide based on the project description.
 
 CREATE:
 1. SEEDER — DatabaseSeeder that creates:
+   - Admin user with email 'admin@tessera.test' and password 'password' (properly hashed)
    - Pages appropriate for THIS business (see above — think about it)
    - Each page with blocks that make sense for its purpose
-   - CRITICAL: Block data keys MUST match what the blade views expect!
-     Read the block views you created to know the exact key names.
-     Example: if hero.blade.php reads \$block->data['heading'], the seeder must set ['heading' => '...']
+   - Block data keys MUST match what the blade views expect! Read the block views first.
+   - For multilingual projects, block data values should be translation arrays that match
+     the locale keys the Block model's resolution method expects.
+   - The homepage slug must match the default slug in PageController — these MUST be consistent.
    - Header navigation linking to all main pages
    - Footer navigation (legal, social, secondary pages)
+   - EVERY navigation URL must point to an actual working route or page slug.
+     Verify: for each nav URL you create, ask "does this route/page actually exist?"
+     CMS pages are at /{slug}. Shop routes are defined in routes/shop.php.
+     Do NOT invent translated URLs for routes that use English paths.
 
 2. Content rules:
    - ALL content must be REALISTIC for this business — NO lorem ipsum, NO placeholder text
@@ -764,32 +913,35 @@ CREATE:
 
 6. Create .env.example additions: document any new .env keys the project needs
    (payment keys, API keys, etc.) — add them to .env.example with descriptive comments
+
+7. If the project's primary language is not English, create translations for all vendor packages
+   that have user-facing strings (Curator, etc.) in lang/vendor/.
 PROMPT,
-            verify: function (): ?string {
-                $result = Console::execSilent(
-                    'php artisan tinker --execute="echo App\\Core\\Models\\Page::count();"',
-                    $this->fullPath,
-                );
+                verify: function (): ?string {
+                    $result = Console::execSilent(
+                        'php artisan tinker --execute="echo App\\Core\\Models\\Page::count();"',
+                        $this->fullPath,
+                    );
 
-                $count = (int) trim($result['output']);
+                    $count = (int) trim($result['output']);
 
-                return $count > 0 ? null : 'No pages created by seeder';
-            },
-            skippable: true,
-            timeout: 600,
-        );
-        $this->memory->completeStep('content');
+                    return $count > 0 ? null : 'No pages created by seeder';
+                },
+                skippable: true,
+                timeout: $this->aiTimeout,
+            );
+            $this->memory->completeStep('content');
         } // end if !isStepDone('content')
 
         // Step E: Generate tests
         if ($this->memory->isStepDone('tests')) {
             Console::success('AI: Generate tests (already done)');
         } else {
-        $this->memory->startStep('tests');
-        $this->steps->runAi(
-            name: 'AI: Generate tests',
-            complexity: Complexity::MEDIUM,
-            prompt: <<<PROMPT
+            $this->memory->startStep('tests');
+            $this->steps->runAi(
+                name: 'AI: Generate tests',
+                complexity: Complexity::MEDIUM,
+                prompt: <<<'PROMPT'
 CONTINUE working on the Tessera project. Models, views, admin, and content are all created.
 
 Analyze the project and generate PHPUnit/Pest tests in tests/Feature/:
@@ -801,49 +953,63 @@ Analyze the project and generate PHPUnit/Pest tests in tests/Feature/:
    - /admin/login returns 200
    - Non-existent page returns 404
 
-2. MODEL TESTS (tests/Feature/ModelTest.php):
+2. URL INTEGRITY TESTS (tests/Feature/NavigationUrlTest.php):
+   THIS IS CRITICAL — it catches broken links before the user ever sees them.
+   After seeding:
+   - Load ALL navigation items from the database
+   - For EACH navigation URL, make a GET request and assert it returns 200 (not 404, not 500)
+   - This ensures every link in the header/footer actually works
+   - Also test that locale switching works: request with ?lang= parameter, verify
+     the response is 200 and the session locale was updated
+
+3. MODEL TESTS (tests/Feature/ModelTest.php):
    - Page can be created with required fields
    - Page has blocks relationship
    - Block belongs to page
    - Navigation can be created
    - Navigation scopes (header, footer) work
 
-3. SERVICE TESTS (tests/Feature/ServiceTest.php):
+4. SERVICE TESTS (tests/Feature/ServiceTest.php):
    - PageRenderer resolves page by slug
    - BlockRegistry returns correct view path for known block type
    - ThemeManager returns active theme name
 
-4. SEEDER TEST (tests/Feature/SeederTest.php):
+5. SEEDER TEST (tests/Feature/SeederTest.php):
    - DatabaseSeeder creates expected pages
    - DatabaseSeeder creates navigation items
    - Pages have blocks after seeding
 
-Use RefreshDatabase trait. Use SQLite in-memory for tests.
-Make sure phpunit.xml is configured for SQLite in-memory (:memory:).
+6. ADMIN TESTS (tests/Feature/AdminTest.php):
+   - Each Filament resource list page loads without errors (no "Class not found")
+   - Creating a record through the admin doesn't show raw JSON in form fields
+
+Use RefreshDatabase trait. Configure phpunit.xml to use SQLite in-memory (:memory:) for tests
+regardless of what database the application uses — tests must be fast and isolated.
 
 IMPORTANT: Write ONLY tests that will PASS with the current codebase.
 Do NOT test features that don't exist yet.
+The URL integrity test is the most important — it proves the site actually works end-to-end.
 PROMPT,
-            verify: function (): ?string {
-                $dir = $this->fullPath . '/tests/Feature';
-                if (! is_dir($dir)) {
-                    return 'tests/Feature directory not found';
-                }
+                verify: function (): ?string {
+                    $dir = $this->fullPath.'/tests/Feature';
+                    if (! is_dir($dir)) {
+                        return 'tests/Feature directory not found';
+                    }
 
-                $files = glob($dir . '/*Test.php');
+                    $files = glob($dir.'/*Test.php');
 
-                return ! empty($files) ? null : 'No test files created';
-            },
-            skippable: true,
-            timeout: 600,
-        );
-        $this->memory->completeStep('tests');
+                    return ! empty($files) ? null : 'No test files created';
+                },
+                skippable: true,
+                timeout: $this->aiTimeout,
+            );
+            $this->memory->completeStep('tests');
         } // end if !isStepDone('tests')
 
         // Step F: Run tests and fix failures
-        if (!$this->memory->isStepDone('tests_fixed')) {
-        $this->runAndFixTests();
-        $this->memory->completeStep('tests_fixed');
+        if (! $this->memory->isStepDone('tests_fixed')) {
+            $this->runAndFixTests();
+            $this->memory->completeStep('tests_fixed');
         } else {
             Console::success('AI: Fix failing tests (already done)');
         }
@@ -852,11 +1018,11 @@ PROMPT,
         if ($this->memory->isStepDone('setup_md')) {
             Console::success('Generating setup instructions for developer (already done)');
         } else {
-        $this->memory->startStep('setup_md');
-        $this->steps->runAi(
-            name: 'Generating setup instructions for developer',
-            complexity: Complexity::SIMPLE,
-            prompt: <<<PROMPT
+            $this->memory->startStep('setup_md');
+            $this->steps->runAi(
+                name: 'Generating setup instructions for developer',
+                complexity: Complexity::SIMPLE,
+                prompt: <<<PROMPT
 FINAL STEP. Read the entire project you just built. Generate a SETUP.md file in the project root.
 
 This file is for the DEVELOPER (junior). It must tell them EXACTLY what they need to do
@@ -918,14 +1084,278 @@ SETUP.md must include:
 Write in CLEAR, simple language. The developer is a junior — don't assume they know
 what a webhook is. Explain briefly when needed.
 PROMPT,
-            verify: fn (): ?string => is_file($this->fullPath . '/SETUP.md') ? null : 'SETUP.md not created',
-            skippable: true,
-            timeout: 300,
-        );
-        $this->memory->completeStep('setup_md');
+                verify: fn (): ?string => is_file($this->fullPath.'/SETUP.md') ? null : 'SETUP.md not created',
+                skippable: true,
+                timeout: $this->aiTimeout,
+            );
+            $this->memory->completeStep('setup_md');
         } // end if !isStepDone('setup_md')
 
         return true;
+    }
+
+    /**
+     * Create the TranslatableFields helper class in the scaffolded project.
+     *
+     * This reusable helper generates locale tabs for Filament forms so that
+     * AI-generated admin panels handle multilingual fields correctly out of the box.
+     */
+    private function createTranslatableFieldsHelper(): void
+    {
+        $path = $this->fullPath.'/app/Filament/Support/TranslatableFields.php';
+
+        file_put_contents($path, <<<'HELPER'
+<?php
+
+declare(strict_types=1);
+
+namespace App\Filament\Support;
+
+use Closure;
+use Filament\Forms;
+use Filament\Schemas\Components\Tabs;
+use Illuminate\Database\Eloquent\Model;
+
+/**
+ * Helper for translatable form fields in Filament.
+ *
+ * Generates locale tabs (one tab per language) so admins can edit
+ * all translations without switching the app locale.
+ * Scales to any number of languages via config('platform.supported_locales').
+ */
+final class TranslatableFields
+{
+    /**
+     * Create locale tabs for model translatable fields.
+     *
+     * The callback receives a locale string and should return
+     * an array of Filament form components for that locale.
+     *
+     * Example:
+     *   TranslatableFields::tabs(fn (string $locale) => [
+     *       TranslatableFields::field('title', $locale, 'Title', required: true),
+     *       TranslatableFields::field('meta_description', $locale, 'Meta Description', 'textarea'),
+     *   ])
+     */
+    public static function tabs(Closure $fieldDefinitions): Tabs
+    {
+        $locales = config('platform.supported_locales', ['en']);
+
+        $tabs = [];
+        foreach ($locales as $locale) {
+            $tabs[] = Tabs\Tab::make(strtoupper($locale))
+                ->schema($fieldDefinitions($locale));
+        }
+
+        return Tabs::make('Translations')->tabs($tabs)->columnSpanFull();
+    }
+
+    /**
+     * Create a single translatable model field for a specific locale.
+     *
+     * Handles hydration (loading from Spatie HasTranslations)
+     * and marks the field as dehydrated(false) so it doesn't
+     * get assigned directly to the model.
+     */
+    public static function field(
+        string $attribute,
+        string $locale,
+        string $label,
+        string $type = 'text',
+        bool $required = false,
+        ?int $maxLength = null,
+        int $rows = 3,
+    ): Forms\Components\Field {
+        $component = self::makeComponent($type, "{$attribute}_{$locale}", $label);
+
+        $component
+            ->afterStateHydrated(function ($component, $record) use ($attribute, $locale): void {
+                $value = '';
+                if ($record) {
+                    $value = (string) ($record->getTranslation($attribute, $locale) ?? '');
+                }
+                $component->state($value);
+            })
+            ->dehydrated(false);
+
+        if ($required) {
+            $component->required();
+        }
+        if ($maxLength !== null) {
+            $component->maxLength($maxLength);
+        }
+        if ($type === 'textarea') {
+            $component->rows($rows);
+        }
+
+        return $component;
+    }
+
+    /**
+     * Create locale tabs for block data fields.
+     *
+     * Uses dot notation (e.g., heading.hr) so Filament stores
+     * data as nested arrays: {"heading": {"hr": "...", "en": "..."}}
+     * which the Block model's resolvedData() method handles.
+     */
+    public static function blockTabs(Closure $fieldDefinitions): Tabs
+    {
+        $locales = config('platform.supported_locales', ['en']);
+
+        $tabs = [];
+        foreach ($locales as $locale) {
+            $tabs[] = Tabs\Tab::make(strtoupper($locale))
+                ->schema($fieldDefinitions($locale));
+        }
+
+        return Tabs::make('Translations')->tabs($tabs)->columnSpanFull();
+    }
+
+    /**
+     * Create a single block data field for a specific locale.
+     * Uses dot notation for nested storage in the block's JSON data.
+     */
+    public static function blockField(
+        string $attribute,
+        string $locale,
+        string $label,
+        string $type = 'text',
+        bool $required = false,
+    ): Forms\Components\Field {
+        $component = self::makeComponent($type, "{$attribute}.{$locale}", $label);
+
+        if ($required) {
+            $component->required();
+        }
+
+        return $component;
+    }
+
+    /**
+     * Collect locale-suffixed field values into translation arrays.
+     *
+     * Transforms: ['title_hr' => 'Naslov', 'title_en' => 'Title']
+     * Into:       ['title' => ['hr' => 'Naslov', 'en' => 'Title']]
+     *
+     * Used in mutateFormDataBeforeCreate().
+     *
+     * @param  array<string>  $translatableFields
+     */
+    public static function collectTranslations(array $data, array $translatableFields): array
+    {
+        $locales = config('platform.supported_locales', ['en']);
+
+        foreach ($translatableFields as $field) {
+            $translations = [];
+            foreach ($locales as $locale) {
+                $key = "{$field}_{$locale}";
+                $translations[$locale] = $data[$key] ?? '';
+                unset($data[$key]);
+            }
+            $data[$field] = $translations;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Save translations on a model using setTranslations().
+     *
+     * Reads locale-suffixed values from form state and calls
+     * $record->setTranslations() for each translatable field.
+     *
+     * Used in mutateFormDataBeforeSave() on edit pages.
+     *
+     * @param  array<string, mixed>  $formState
+     * @param  array<string>  $translatableFields
+     */
+    public static function saveTranslations(Model $record, array $formState, array $translatableFields): void
+    {
+        $locales = config('platform.supported_locales', ['en']);
+
+        foreach ($translatableFields as $field) {
+            $translations = [];
+            foreach ($locales as $locale) {
+                $key = "{$field}_{$locale}";
+                $translations[$locale] = $formState[$key] ?? '';
+            }
+            $record->setTranslations($field, $translations);
+        }
+    }
+
+    private static function makeComponent(string $type, string $name, string $label): Forms\Components\Field
+    {
+        return match ($type) {
+            'textarea' => Forms\Components\Textarea::make($name)->label($label)->default(''),
+            'rich' => Forms\Components\RichEditor::make($name)->label($label)->columnSpanFull()->default(''),
+            'url' => Forms\Components\TextInput::make($name)->label($label)->url()->default(''),
+            default => Forms\Components\TextInput::make($name)->label($label)->default(''),
+        };
+    }
+}
+HELPER);
+    }
+
+    /**
+     * Configure the database in .env based on requirements.
+     */
+    private function configureDatabase(): void
+    {
+        $db = $this->requirements['database'] ?? 'sqlite';
+        $envFile = $this->fullPath.'/.env';
+
+        if (! is_file($envFile)) {
+            return;
+        }
+
+        $env = (string) file_get_contents($envFile);
+        $projectName = basename($this->fullPath);
+
+        if ($db === 'sqlite') {
+            // Laravel default — ensure DB_CONNECTION=sqlite
+            $env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=sqlite', $env);
+            // Remove MySQL-specific lines if present
+            $env = preg_replace('/^DB_HOST=.*\n?/m', '', $env);
+            $env = preg_replace('/^DB_PORT=.*\n?/m', '', $env);
+            $env = preg_replace('/^DB_DATABASE=(?!.*database\.sqlite).*\n?/m', '', $env);
+            $env = preg_replace('/^DB_USERNAME=.*\n?/m', '', $env);
+            $env = preg_replace('/^DB_PASSWORD=.*\n?/m', '', $env);
+        } elseif (in_array($db, ['mysql', 'mariadb'], true)) {
+            $env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=mysql', $env);
+            $env = preg_replace('/^DB_HOST=.*/m', 'DB_HOST=127.0.0.1', $env);
+            $env = preg_replace('/^DB_PORT=.*/m', 'DB_PORT=3306', $env);
+            $env = preg_replace('/^DB_DATABASE=.*/m', "DB_DATABASE={$projectName}", $env);
+            $env = preg_replace('/^DB_USERNAME=.*/m', 'DB_USERNAME=root', $env);
+            $env = preg_replace('/^DB_PASSWORD=.*/m', 'DB_PASSWORD=', $env);
+
+            // If these lines don't exist, add them after DB_CONNECTION
+            if (! preg_match('/^DB_HOST=/m', $env)) {
+                $env = preg_replace('/^(DB_CONNECTION=.*)$/m', "$1\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE={$projectName}\nDB_USERNAME=root\nDB_PASSWORD=", $env);
+            }
+
+            // Try to create the database
+            $createCmd = $db === 'mariadb'
+                ? "mariadb -u root -e \"CREATE DATABASE IF NOT EXISTS \\`{$projectName}\\`;\""
+                : "mysql -u root -e \"CREATE DATABASE IF NOT EXISTS \\`{$projectName}\\`;\"";
+
+            Console::execSilent($createCmd, $this->fullPath);
+        } elseif ($db === 'postgresql') {
+            $env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=pgsql', $env);
+            $env = preg_replace('/^DB_HOST=.*/m', 'DB_HOST=127.0.0.1', $env);
+            $env = preg_replace('/^DB_PORT=.*/m', 'DB_PORT=5432', $env);
+            $env = preg_replace('/^DB_DATABASE=.*/m', "DB_DATABASE={$projectName}", $env);
+            $env = preg_replace('/^DB_USERNAME=.*/m', 'DB_USERNAME=postgres', $env);
+            $env = preg_replace('/^DB_PASSWORD=.*/m', 'DB_PASSWORD=', $env);
+
+            if (! preg_match('/^DB_HOST=/m', $env)) {
+                $env = preg_replace('/^(DB_CONNECTION=.*)$/m', "$1\nDB_HOST=127.0.0.1\nDB_PORT=5432\nDB_DATABASE={$projectName}\nDB_USERNAME=postgres\nDB_PASSWORD=", $env);
+            }
+
+            // Try to create the database
+            Console::execSilent("createdb {$projectName} 2>/dev/null", $this->fullPath);
+        }
+
+        file_put_contents($envFile, $env);
     }
 
     /**
@@ -968,7 +1398,7 @@ PROMPT,
 
             // Let AI fix the failures
             // Truncate output to last 2000 chars to avoid prompt size issues
-            $truncatedOutput = strlen($output) > 2000 ? '...' . substr($output, -2000) : $output;
+            $truncatedOutput = strlen($output) > 2000 ? '...'.substr($output, -2000) : $output;
 
             $this->steps->runAi(
                 name: 'AI: Fix failing tests',
@@ -987,7 +1417,7 @@ Fix the failing tests. Rules:
 PROMPT,
                 verify: null,
                 skippable: true,
-                timeout: 300,
+                timeout: $this->aiTimeout,
             );
         }
     }

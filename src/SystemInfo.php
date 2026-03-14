@@ -26,18 +26,22 @@ final class SystemInfo
     /** @var array<string, string> */
     private array $installedTools;
 
+    /** @var array<string, string> */
+    private array $databases;
+
     private function __construct()
     {
         $this->detectOs();
         $this->detectShell();
         $this->detectPackageManagers();
         $this->detectInstalledTools();
+        $this->detectDatabases();
     }
 
     public static function detect(): self
     {
         if (self::$instance === null) {
-            self::$instance = new self();
+            self::$instance = new self;
         }
 
         return self::$instance;
@@ -79,6 +83,8 @@ final class SystemInfo
         $pkgManagers = $this->formatPackageManagers();
         $installGuide = $this->buildInstallGuide();
 
+        $dbs = $this->formatDatabases();
+
         return <<<CONTEXT
 SYSTEM ENVIRONMENT:
 - OS: {$os} ({$this->osVersion})
@@ -86,6 +92,7 @@ SYSTEM ENVIRONMENT:
 - Shell: {$this->shell}
 - Package managers: {$pkgManagers}
 - Installed tools: {$tools}
+- Available databases: {$dbs}
 
 INSTALL GUIDE FOR THIS OS:
 {$installGuide}
@@ -96,6 +103,44 @@ RULES:
 - Use forward slashes for paths (even on Windows if running in Git Bash/MSYS)
 - If a tool is missing, install it using the guide above before proceeding
 CONTEXT;
+    }
+
+    /**
+     * Get detected databases.
+     *
+     * @return array<string, string>
+     */
+    public function databases(): array
+    {
+        return $this->databases;
+    }
+
+    /**
+     * Check if a specific database server is available.
+     */
+    public function hasDatabase(string $name): bool
+    {
+        return isset($this->databases[$name]);
+    }
+
+    /**
+     * Get the best available database (mysql/mariadb preferred over sqlite for production).
+     */
+    public function bestDatabase(): string
+    {
+        if (isset($this->databases['mariadb'])) {
+            return 'mariadb';
+        }
+
+        if (isset($this->databases['mysql'])) {
+            return 'mysql';
+        }
+
+        if (isset($this->databases['postgresql'])) {
+            return 'postgresql';
+        }
+
+        return 'sqlite';
     }
 
     /**
@@ -154,11 +199,11 @@ CONTEXT;
                 $this->os = 'windows';
                 // Check if MSYS/Git Bash
                 $msysCheck = getenv('MSYSTEM');
-                $this->osVersion = $msysCheck ? "Windows (MSYS2/{$msysCheck})" : 'Windows ' . php_uname('r');
+                $this->osVersion = $msysCheck ? "Windows (MSYS2/{$msysCheck})" : 'Windows '.php_uname('r');
             }
         } elseif (PHP_OS_FAMILY === 'Darwin') {
             $this->os = 'macos';
-            $this->osVersion = 'macOS ' . trim((string) shell_exec('sw_vers -productVersion 2>/dev/null'));
+            $this->osVersion = 'macOS '.trim((string) shell_exec('sw_vers -productVersion 2>/dev/null'));
         } else {
             // Check WSL on Linux
             $procVersion = @file_get_contents('/proc/version');
@@ -248,6 +293,31 @@ CONTEXT;
         }
     }
 
+    private function detectDatabases(): void
+    {
+        $this->databases = [];
+
+        $dbs = [
+            'mysql' => 'mysql --version',
+            'mariadb' => 'mariadb --version',
+            'postgresql' => 'psql --version',
+            'sqlite' => 'sqlite3 --version',
+        ];
+
+        foreach ($dbs as $name => $cmd) {
+            $result = Console::execSilent($cmd);
+            if ($result['exit'] === 0) {
+                $firstLine = trim(strtok($result['output'], "\n") ?: '');
+                $this->databases[$name] = $firstLine;
+            }
+        }
+
+        // SQLite is always available via PHP's built-in driver
+        if (! isset($this->databases['sqlite']) && extension_loaded('pdo_sqlite')) {
+            $this->databases['sqlite'] = 'PDO SQLite (built-in)';
+        }
+    }
+
     private function formatInstalledTools(): string
     {
         if (empty($this->installedTools)) {
@@ -269,6 +339,20 @@ CONTEXT;
         }
 
         return implode(', ', array_keys($this->packageManagers));
+    }
+
+    private function formatDatabases(): string
+    {
+        if (empty($this->databases)) {
+            return 'SQLite (PHP built-in)';
+        }
+
+        $parts = [];
+        foreach ($this->databases as $name => $version) {
+            $parts[] = "{$name} ({$version})";
+        }
+
+        return implode(', ', $parts);
     }
 
     private function buildInstallGuide(): string
