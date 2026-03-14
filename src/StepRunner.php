@@ -202,8 +202,11 @@ final class StepRunner
             $instructions .= "  composer require{$devFlag} {$fail['package']}\n";
         }
 
+        $errorMsg = 'Could not install: '.implode(', ', $failedNames);
+
         return $this->askUserToFix(
             $name,
+            $errorMsg,
             $instructions,
             fn (): bool => true, // No re-execute needed
             null,
@@ -356,7 +359,7 @@ final class StepRunner
     ): bool {
         $instructions = $fixHint ?? 'Fix the error and try again.';
 
-        return $this->askUserToFix($name, $instructions, $execute, $verify, $skippable);
+        return $this->askUserToFix($name, $error, $instructions, $execute, $verify, $skippable);
     }
 
     /**
@@ -364,6 +367,7 @@ final class StepRunner
      */
     private function askUserToFix(
         string $name,
+        string $error,
         string $instructions,
         callable $execute,
         ?callable $verify,
@@ -441,6 +445,6 @@ final class StepRunner
         // Still failing — let user try again
         Console::fail("  Still failing: {$error}");
 
-        return $this->askUserToFix($name, "Previous fix didn't work.\n{$error}", $execute, $verify, $skippable, $depth + 1);
+        return $this->askUserToFix($name, $error, "Previous fix didn't work.\n{$error}", $execute, $verify, $skippable, $depth + 1);
     }
 }
