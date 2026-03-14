@@ -617,11 +617,25 @@ STEP 2 — ALWAYS CREATE (every Tessera project has these):
 8. Set .env: APP_LOCALE and APP_FALLBACK_LOCALE to the project's PRIMARY language
    (must match the language of the content in the seeder — e.g., 'hr' for Croatian projects)
 
+ROUTE ORDERING (CRITICAL — this causes 404 errors if wrong):
+- The catch-all route /{slug?} MUST be registered LAST, after ALL other routes.
+- In bootstrap/app.php, use the 'then:' callback to register the catch-all AFTER Filament:
+  ->withRouting(web: __DIR__.'/../routes/web.php', then: function () {
+      Route::middleware('web')->group(base_path('routes/shop.php')); // if e-commerce
+      Route::get('/{slug?}', [PageController::class, 'show'])->where('slug', '.*');
+  })
+- NEVER use Route closures — always use [Controller::class, 'method'] syntax.
+  Closures break `php artisan route:cache` which is required for production.
+- If the shop has routes, load routes/shop.php BEFORE the catch-all but inside 'then:'.
+
 VERIFICATION PRINCIPLES (apply throughout):
 - Every class import must resolve to an actual class in the installed package version. If unsure, check the package source.
 - Route closures that receive models via route model binding must type-hint their parameters.
 - Livewire component registrations must use fully-qualified class names (not relative namespace paths that could conflict with the Livewire package namespace).
 - All code must work correctly when the locale is switched — verify mentally by tracing the data flow.
+- Every Livewire full-page component (one that returns a view with ->layout()) MUST have the
+  layout declaration. Without it, Livewire renders the component without any HTML structure (no <html>, no <head>).
+  Use either: `->layout('layouts.shop')` in render(), or `#[Layout('layouts.shop')]` attribute on the class.
 
 STEP 3 — IF E-COMMERCE ({$shop}):
 Create a full shop module in app/Modules/Shop/:
@@ -630,18 +644,46 @@ Create a full shop module in app/Modules/Shop/:
 - PaymentGateway interface in Payments/ with implementations for: {$payments}
   Each gateway must have: charge(), refund(), webhookHandler(), getConfigKeys()
   getConfigKeys() returns array of .env keys needed
+  PAYMENT GATEWAY PATTERN: There are two common payment flows — understand which to use:
+    a) REDIRECT gateways (CorvusPay, PayPal, etc.): charge() builds form data + signature,
+       returns a redirect URL. The customer is sent to the provider's hosted page.
+       Needs: success/cancel callback routes + webhook route for async notifications.
+    b) API gateways (Stripe, Mollie, etc.): charge() calls an API, creates a PaymentIntent/session,
+       returns a client secret or redirect URL. Needs: webhook route for payment confirmation.
+  charge() must return a PaymentResult DTO with: success, redirectUrl, transactionId, error.
 - ShippingCalculator interface + zone-based implementation
-- Livewire components: ProductCard, ProductFilter, CartWidget, CartPage, Checkout
-- Shop routes in routes/shop.php (products, cart, checkout, webhooks)
+  Must include zoneFromPostalCode(string \$postalCode): string method that auto-detects
+  shipping zone from postal code instead of requiring users to manually select a zone.
+- Livewire components: ProductCard, ProductFilter, CartWidget, CartPage, Checkout, AddToCart
+  - AddToCart: variant selector, quantity +/- buttons, add-to-cart button (for product detail page)
+  - CartPage: full cart view with quantity editing, coupon, postal code for shipping estimate
+  - Checkout: shipping/billing forms, payment method selection, order summary
+  - ProductFilter: category filter, price range, sorting (for product listing page)
+- PRODUCT DETAIL PAGE: Create a product detail view (show single product with images,
+  description, variants, price, and the AddToCart Livewire component). This is NOT a Livewire
+  full-page component — it's a Blade view with an embedded AddToCart component.
+  Route: /shop/product/{product:slug}
+- Shop routes in routes/shop.php (products, cart, checkout, webhooks, product detail)
 - config/shop.php (currency, tax_rate, shipping_zones, payment providers, free_shipping_threshold)
 - ShopSeeder with realistic sample data for THIS business type
 - ShopServiceProvider registered in bootstrap/providers.php
+  CRITICAL: Livewire components in non-standard namespaces (like App\Modules\Shop\Livewire)
+  must be MANUALLY REGISTERED in the ServiceProvider boot() method:
+    Livewire::component('shop.cart-widget', CartWidget::class);
+    Livewire::component('shop.cart-page', CartPage::class);
+    Livewire::component('shop.checkout', Checkout::class);
+    Livewire::component('shop.add-to-cart', AddToCart::class);
+    Livewire::component('shop.product-filter', ProductFilter::class);
+  Without this, Livewire cannot find the components and throws "Unable to find component" errors.
 
 IMPORTANT:
 - declare(strict_types=1), typed properties, return types EVERYWHERE
 - The database is already configured in .env — do NOT change it. Use whatever DB_CONNECTION is set.
 - Every Livewire component must have a corresponding blade view
 - Payment gateways must define getConfigKeys() so we can tell the developer what to configure
+- Database migrations must be compatible with BOTH SQLite and MySQL/PostgreSQL:
+  Do NOT use MySQL-specific syntax (e.g., ->unsigned() on non-integer columns, ENUM columns).
+  Use Laravel's column types which abstract DB differences.
 PROMPT,
                 verify: function (): ?string {
                     if (! is_file($this->fullPath.'/app/Core/Models/Page.php')) {
@@ -649,6 +691,13 @@ PROMPT,
                     }
                     if (! is_file($this->fullPath.'/app/Core/Services/PageRenderer.php')) {
                         return 'PageRenderer not created';
+                    }
+                    if (! is_file($this->fullPath.'/app/Core/Http/PageController.php')) {
+                        return 'PageController not created';
+                    }
+                    if (($this->requirements['needs_shop'] ?? false)
+                        && ! is_file($this->fullPath.'/app/Modules/Shop/ShopServiceProvider.php')) {
+                        return 'ShopServiceProvider not created';
                     }
 
                     return null;
@@ -709,7 +758,11 @@ CREATE:
    - text-image.blade.php — text + image side by side (with alignment option)
    - feature-cards.blade.php — array of cards, each with icon, title, description
    - cta-banner.blade.php — call-to-action with heading, text, button
-   - contact-form.blade.php — Livewire contact form with validation
+   - contact-form.blade.php — Livewire contact form component
+     IMPORTANT: This block embeds a Livewire component. You MUST create BOTH:
+       a) The block blade view (resources/views/themes/default/blocks/contact-form.blade.php) — renders <livewire:contact-form />
+       b) The Livewire component class (app/Livewire/ContactForm.php) + its blade view (resources/views/livewire/contact-form.blade.php)
+     The Livewire component handles validation, submission, and success/error messages.
    - faq-accordion.blade.php — collapsible items (Alpine.js)
    - gallery-masonry.blade.php — grid of images from Curator
    - testimonials.blade.php — customer reviews with name, text, rating
@@ -719,8 +772,15 @@ CREATE:
 3. IF E-COMMERCE: Shop views (resources/views/shop/, resources/views/components/layouts/shop.blade.php)
    Shop pages must look like they belong to the same website. They must share the same
    header, footer, and visual style as the CMS pages. Do not create a separate design for shop.
+   The shop layout (layouts/shop.blade.php) should @extend or @include the same master layout
+   partials (header, footer) as the CMS theme — do NOT duplicate the header/footer HTML.
+   Full-page Livewire shop components (CartPage, Checkout) MUST declare their layout:
+     return view('shop.livewire.checkout', [...])->layout('layouts.shop');
+   Without this, they render as raw HTML fragments without <html>, <head>, or any styling.
 
 4. Routing: catch-all /{slug?} in bootstrap/app.php (AFTER Filament routes, in 'then:' callback)
+   NEVER use Route::get('/{slug?}', function() {}) — use controller syntax.
+   Route closures cannot be cached by `php artisan route:cache`.
 
 5. config/platform.php — site_name, default_theme, supported_locales, address, contact_phone, contact_email, social links
 
@@ -750,6 +810,16 @@ PROMPT,
                 verify: function (): ?string {
                     if (! is_file($this->fullPath.'/resources/views/themes/default/layouts/master.blade.php')) {
                         return 'Master layout not created';
+                    }
+                    if (empty(glob($this->fullPath.'/resources/views/themes/default/blocks/*.blade.php'))) {
+                        return 'No block views created';
+                    }
+                    if (! is_file($this->fullPath.'/resources/views/themes/default/partials/header.blade.php')) {
+                        return 'Header partial not created';
+                    }
+                    if (($this->requirements['needs_shop'] ?? false)
+                        && ! is_file($this->fullPath.'/resources/views/components/layouts/shop.blade.php')) {
+                        return 'Shop layout not created';
                     }
 
                     return null;
@@ -790,6 +860,14 @@ Before using any Filament class, verify the namespace is correct for the INSTALL
 Filament's namespace structure changes between major versions. Check the actual source files in
 vendor/filament/ if you're unsure whether a class is in Filament\Actions, Filament\Tables\Actions, etc.
 A wrong namespace causes a fatal "Class not found" error that breaks the entire admin.
+
+Common Filament v5 namespaces (verify against vendor/ if unsure):
+  - Filament\Resources\Resource (base resource class)
+  - Filament\Forms\Components\TextInput, RichEditor, Select, Toggle, Builder, Repeater
+  - Filament\Tables\Columns\TextColumn, IconColumn, BadgeColumn
+  - Filament\Tables\Actions\EditAction, DeleteAction (NOT Filament\Actions for table actions)
+  - Filament\Schemas\Components\Tabs (NOT Filament\Forms\Components\Tabs in v5)
+  - Awcodes\Curator\Components\Forms\CuratorPicker (NOT Awcodes\Curator\Forms\CuratorPicker)
 
 CREATE:
 1. FILAMENT RESOURCES:
@@ -851,8 +929,21 @@ PROMPT,
                     }
 
                     $files = glob($dir.'/*.php');
+                    if (empty($files)) {
+                        return 'No Filament resources created';
+                    }
 
-                    return ! empty($files) ? null : 'No Filament resources created';
+                    // Check PageResource specifically (it's the most important)
+                    if (! is_file($dir.'/PageResource.php')) {
+                        return 'PageResource not created';
+                    }
+
+                    // Check CLAUDE.md was created
+                    if (! is_file($this->fullPath.'/CLAUDE.md')) {
+                        return 'CLAUDE.md not created';
+                    }
+
+                    return null;
                 },
                 skippable: true,
                 timeout: $this->aiTimeout,
@@ -897,6 +988,8 @@ CREATE:
      Verify: for each nav URL you create, ask "does this route/page actually exist?"
      CMS pages are at /{slug}. Shop routes are defined in routes/shop.php.
      Do NOT invent translated URLs for routes that use English paths.
+     For shop links, use the EXACT route paths from routes/shop.php (e.g., /shop, /shop/cart).
+     Do NOT guess — read routes/shop.php first.
 
 2. Content rules:
    - ALL content must be REALISTIC for this business — NO lorem ipsum, NO placeholder text
@@ -944,7 +1037,8 @@ PROMPT,
                 prompt: <<<'PROMPT'
 CONTINUE working on the Tessera project. Models, views, admin, and content are all created.
 
-Analyze the project and generate PHPUnit/Pest tests in tests/Feature/:
+Generate PHPUnit tests in tests/Feature/. Use PHPUnit class-based syntax (NOT Pest function syntax).
+Each test class must extend Tests\TestCase and use Illuminate\Foundation\Testing\RefreshDatabase.
 
 1. ROUTE TESTS (tests/Feature/RouteTest.php):
    - Homepage (/) returns 200
@@ -986,9 +1080,14 @@ Analyze the project and generate PHPUnit/Pest tests in tests/Feature/:
 Use RefreshDatabase trait. Configure phpunit.xml to use SQLite in-memory (:memory:) for tests
 regardless of what database the application uses — tests must be fast and isolated.
 
-IMPORTANT: Write ONLY tests that will PASS with the current codebase.
-Do NOT test features that don't exist yet.
-The URL integrity test is the most important — it proves the site actually works end-to-end.
+IMPORTANT:
+- Write ONLY tests that will PASS with the current codebase. Do NOT test features that don't exist yet.
+- The URL integrity test is the most important — it proves the site actually works end-to-end.
+- Use PHPUnit class syntax: class RouteTest extends TestCase { public function test_homepage(): void { } }
+  Do NOT use Pest syntax (test(), it(), describe(), etc.) — this project uses PHPUnit.
+- If any models use MySQL-specific features, ensure tests still work on SQLite :memory:.
+  Common SQLite incompatibilities: ENUM columns (use string), json_extract (works differently),
+  unsigned bigint (use regular bigint). Use Laravel's column types which abstract these.
 PROMPT,
                 verify: function (): ?string {
                     $dir = $this->fullPath.'/tests/Feature';
@@ -1414,6 +1513,8 @@ Fix the failing tests. Rules:
 3. Do NOT delete tests — fix them
 4. Do NOT change test assertions to match wrong behavior — fix the root cause
 5. Make sure all tests use RefreshDatabase trait and SQLite in-memory
+6. Tests must be PHPUnit class syntax (NOT Pest). Convert if needed.
+7. If a test fails because of SQLite vs MySQL incompatibility, fix the migration/model, not the test
 PROMPT,
                 verify: null,
                 skippable: true,

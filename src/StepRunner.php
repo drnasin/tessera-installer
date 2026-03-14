@@ -228,6 +228,10 @@ final class StepRunner
             name: $name,
             execute: function () use ($name, $prompt, $timeout, $complexity): bool {
                 $selection = $this->router->resolve($complexity);
+                $toolName = $selection->tool->name();
+                $modelName = $selection->model ? basename($selection->model) : 'default';
+                Console::line("  Using: {$toolName} ({$modelName})");
+
                 $startTime = time();
                 $response = $selection->tool->execute($prompt, $this->workingDir, $timeout, $selection->model);
                 $elapsed = time() - $startTime;
@@ -338,6 +342,7 @@ final class StepRunner
 
         // Fixes are straightforward — use a fast model
         $selection = $this->router->resolve(Complexity::SIMPLE);
+        Console::line("  Fix using: {$selection->tool->name()}");
         $response = $selection->tool->execute($prompt, $this->workingDir, 120, $selection->model);
 
         return $response->success;
