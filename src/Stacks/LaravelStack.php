@@ -717,6 +717,28 @@ PROMPT,
 CONTINUE working on the Tessera project. Core models and services are already created.
 Read the Block model and BlockRegistry to understand the data flow.
 
+YOUR ROLE: You are an EXPERIENCED UX DESIGNER and frontend developer.
+You don't just write HTML — you design EXPERIENCES. Every decision you make must answer:
+"Is this easy to use? Is this intuitive? Would a first-time visitor know what to do?"
+
+UX PRINCIPLES you follow:
+- HIERARCHY: The user's eye must be guided. Most important content first, clear visual weight.
+  Every page has ONE primary action — make it obvious. Secondary actions are visually subordinate.
+- AFFORDANCE: Interactive elements must LOOK interactive. Buttons look like buttons.
+  Links are distinguishable from text. Clickable cards have hover states that invite interaction.
+- FEEDBACK: Every user action gets immediate visual feedback. Button clicked → loading state.
+  Form submitted → success/error message. Item added to cart → visual confirmation.
+- CONSISTENCY: Same patterns everywhere. If "Add to cart" is a blue button on one page,
+  it's a blue button on every page. Same spacing, same typography scale, same color meanings.
+- ACCESSIBILITY: Sufficient color contrast (WCAG AA minimum). Focus states on interactive elements.
+  Meaningful alt text on images. Logical heading hierarchy (h1 → h2 → h3, never skipping).
+- MOBILE-FIRST: Design for phone screens first, enhance for desktop. Touch targets minimum 44px.
+  No horizontal scrolling. Content readable without zooming.
+- WHITESPACE: Generous spacing creates clarity. Cramped layouts feel cheap and overwhelming.
+  Let content breathe. Sections need clear visual separation.
+- NAVIGATION: The user must ALWAYS know where they are and how to get elsewhere.
+  Clear active states, breadcrumbs where appropriate, consistent navigation placement.
+
 PROJECT: {$desc}
 GENERATE FRONTEND: {$needsFrontend}
 DESIGN STYLE: {$designStyle}
@@ -788,28 +810,32 @@ CREATE:
 
 5. config/platform.php — site_name, default_theme, supported_locales, address, contact_phone, contact_email, social links
 
-6. VISUAL CONSISTENCY: Verify every UI element is readable on its background (e.g., white inputs on
-   white backgrounds are invisible — add contrast). Test mentally by imagining the page rendered.
-
-7. NULL-SAFE CONTENT: All blade views must handle null/empty data gracefully. Use null coalescing
+6. NULL-SAFE CONTENT: All blade views must handle null/empty data gracefully. Use null coalescing
    (\$block->data['key'] ?? '') for all data access. RichEditor/TipTap content MUST never be null —
    use empty string defaults. Blade {!! !!} output on null content can crash renderers.
 
-8. MULTILINGUAL: All hardcoded text in templates must be locale-aware for all configured languages.
+7. MULTILINGUAL: All hardcoded text in templates must be locale-aware for all configured languages.
    Navigation labels and URLs come from the DB (HasTranslations) so they switch automatically.
 
-DESIGN — make it look like a REAL website, not a template:
-- Style: {$designStyle}
-- Colors: {$designColors}
-- Mobile-first responsive design
-- Hero: visually striking, gradient or background image, large typography
-- Cards: hover effects (shadow-lg, scale-105 transition)
-- Typography hierarchy: text-5xl/6xl for hero, text-3xl for sections, proper line-height
-- Spacing: generous padding (py-16, py-24 for sections)
-- Navigation: sticky, transparent-to-solid on scroll (Alpine.js), hamburger on mobile
-- Footer: dark background, 3-4 columns, social icons
-- Images: use curator_url(\$block->data['image']) helper for all media
-- ALL content language: {$langs}
+DESIGN — You are designing a REAL website for a REAL business, not a code demo.
+Before writing any Tailwind class, ask: "Would a client pay for this? Would users enjoy using it?"
+
+Style: {$designStyle}
+Colors: {$designColors}
+Content language: {$langs}
+Images: use curator_url(\$block->data['image']) helper for all media
+
+SELF-CHECK — After creating each page/component, mentally render it and verify:
+- Can I read ALL text against its background? (white text on light backgrounds = invisible)
+- Do form inputs have visible borders/backgrounds? (white inputs on white = invisible)
+- Is there enough contrast between sections? (alternating backgrounds help)
+- Do interactive elements have hover/focus/active states?
+- Does the page make sense on a 375px phone screen?
+- Is there a clear visual hierarchy? Can I tell what's most important in 2 seconds?
+- Are loading states handled? (wire:loading for Livewire, spinners for async actions)
+- Are empty states handled? (empty cart, no search results, no orders yet)
+- Are error states handled? (form validation, payment failure, 404 pages)
+If ANY answer is "no" — fix it before moving on.
 PROMPT,
                 verify: function (): ?string {
                     if (! is_file($this->fullPath.'/resources/views/themes/default/layouts/master.blade.php')) {
