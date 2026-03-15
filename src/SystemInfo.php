@@ -258,7 +258,7 @@ CONTEXT;
         foreach ($managers as $name => $cmd) {
             $result = Console::execSilent($cmd);
             if ($result['exit'] === 0) {
-                $version = trim(strtok($result['output'], "\n") ?: '');
+                $version = trim(Console::firstLine($result['output']));
                 $this->packageManagers[$name] = $version;
             }
         }
@@ -287,7 +287,7 @@ CONTEXT;
         foreach ($tools as $name => $cmd) {
             $result = Console::execSilent($cmd);
             if ($result['exit'] === 0) {
-                $firstLine = trim(strtok($result['output'], "\n") ?: '');
+                $firstLine = trim(Console::firstLine($result['output']));
                 $this->installedTools[$name] = $firstLine;
             }
         }
@@ -307,7 +307,7 @@ CONTEXT;
         foreach ($dbs as $name => $cmd) {
             $result = Console::execSilent($cmd);
             if ($result['exit'] === 0) {
-                $firstLine = trim(strtok($result['output'], "\n") ?: '');
+                $firstLine = trim(Console::firstLine($result['output']));
                 $this->databases[$name] = $firstLine;
             }
         }

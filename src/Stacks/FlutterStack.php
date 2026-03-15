@@ -341,8 +341,7 @@ PROMPT,
         $flutter = Console::execSilent('flutter --version');
         if ($flutter['exit'] === 0) {
             // First line is like "Flutter 3.24.0 • channel stable..."
-            $firstLine = strtok($flutter['output'], "\n");
-            $versions[] = trim((string) $firstLine);
+            $versions[] = trim(Console::firstLine($flutter['output']));
         }
 
         $dart = Console::execSilent('dart --version');

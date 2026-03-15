@@ -21,15 +21,15 @@ final class Memory
 
     public function __construct(string $projectDir)
     {
-        $this->stateDir = $projectDir . DIRECTORY_SEPARATOR . '.tessera';
-        $this->stateFile = $this->stateDir . DIRECTORY_SEPARATOR . 'state.json';
+        $this->stateDir = $projectDir.DIRECTORY_SEPARATOR.'.tessera';
+        $this->stateFile = $this->stateDir.DIRECTORY_SEPARATOR.'state.json';
         $this->state = $this->load();
     }
 
     /**
      * Initialize memory for a new project.
      *
-     * @param array<string, mixed> $requirements
+     * @param  array<string, mixed>  $requirements
      */
     public function init(string $projectName, string $stack, array $requirements, string $systemContext): void
     {
@@ -58,7 +58,7 @@ final class Memory
      * Update requirements and system context without wiping progress.
      * Used when resuming a previous install.
      *
-     * @param array<string, mixed> $requirements
+     * @param  array<string, mixed>  $requirements
      */
     public function updateContext(array $requirements, string $systemContext): void
     {
@@ -238,7 +238,7 @@ final class Memory
         );
 
         $decisions = array_map(
-            fn (array $d): string => "{$d['what']}: {$d['decision']}" . ($d['reason'] ? " ({$d['reason']})" : ''),
+            fn (array $d): string => "{$d['what']}: {$d['decision']}".($d['reason'] ? " ({$d['reason']})" : ''),
             $this->state['decisions'] ?? [],
         );
 
@@ -257,19 +257,19 @@ final class Memory
         }
 
         if (! empty($completed)) {
-            $context .= "- Completed: " . implode(', ', $completed) . "\n";
+            $context .= '- Completed: '.implode(', ', $completed)."\n";
         }
 
         if (! empty($failed)) {
-            $context .= "- Failed: " . implode('; ', $failed) . "\n";
+            $context .= '- Failed: '.implode('; ', $failed)."\n";
         }
 
         if (! empty($decisions)) {
-            $context .= "- Decisions made: " . implode('; ', $decisions) . "\n";
+            $context .= '- Decisions made: '.implode('; ', $decisions)."\n";
         }
 
         if (! empty($notes)) {
-            $context .= "- Notes: " . implode('; ', $notes) . "\n";
+            $context .= '- Notes: '.implode('; ', $notes)."\n";
         }
 
         return $context;
@@ -306,13 +306,22 @@ final class Memory
 
     private function save(): void
     {
-        if (! is_dir($this->stateDir)) {
-            @mkdir($this->stateDir, 0755, true);
+        if (! is_dir($this->stateDir) && ! mkdir($this->stateDir, 0755, true) && ! is_dir($this->stateDir)) {
+            return;
         }
 
-        file_put_contents(
-            $this->stateFile,
-            json_encode($this->state, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-        );
+        $json = json_encode($this->state, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        if ($json === false) {
+            return;
+        }
+
+        // Atomic write: write to temp file, then rename.
+        // Prevents corrupted state.json if the process crashes mid-write.
+        $tmpFile = $this->stateFile.'.tmp';
+
+        if (file_put_contents($tmpFile, $json) !== false) {
+            rename($tmpFile, $this->stateFile);
+        }
     }
 }

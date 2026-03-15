@@ -1055,8 +1055,11 @@ PROMPT,
             );
             $this->memory->completeStep('admin');
 
-            // Auto-fix Filament 5 namespace issues (AI often uses Filament 4 namespaces)
+            // Auto-fix Filament namespaces (AI often uses wrong version's namespaces)
             $this->fixFilamentNamespaces();
+
+            // PHP lint — catch syntax errors before continuing
+            $this->lintPhpFiles();
         } // end if !isStepDone('admin')
 
         // Step D: Content & pages
@@ -1654,6 +1657,53 @@ HELPER);
     private function makeRelativeRef(string $fqcn): string
     {
         return '\\'.$fqcn;
+    }
+
+    /**
+     * Run php -l on all generated PHP files to catch syntax errors early.
+     * Catches "Class not found", missing semicolons, etc. — zero tokens.
+     */
+    private function lintPhpFiles(): void
+    {
+        $dirs = [
+            $this->fullPath.'/app',
+            $this->fullPath.'/database',
+            $this->fullPath.'/routes',
+            $this->fullPath.'/config',
+        ];
+
+        $errors = [];
+
+        foreach ($dirs as $dir) {
+            if (! is_dir($dir)) {
+                continue;
+            }
+
+            $rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir));
+
+            foreach ($rii as $file) {
+                if ($file->isDir() || $file->getExtension() !== 'php') {
+                    continue;
+                }
+
+                $result = Console::execSilent("php -l \"{$file->getPathname()}\"");
+
+                if ($result['exit'] !== 0) {
+                    $errors[] = $file->getPathname().': '.$result['output'];
+                }
+            }
+        }
+
+        if (! empty($errors)) {
+            Console::warn('  PHP lint found '.count($errors).' syntax errors:');
+            foreach (array_slice($errors, 0, 5) as $error) {
+                Console::warn('    '.basename($error));
+            }
+
+            if (count($errors) > 5) {
+                Console::warn('    ... and '.(count($errors) - 5).' more');
+            }
+        }
     }
 
     /**
