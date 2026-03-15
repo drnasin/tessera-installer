@@ -227,19 +227,16 @@ Default is **Free** for each tool. If you have an unlimited plan (e.g., Claude M
 | **Generous** | Claude Pro, Codex Plus | Preferred but balanced |
 | **Limited** | Free tiers | Fallback only |
 
-You can skip the interactive prompt by setting environment variables:
+Most users don't need to configure anything — the installer asks during setup. Environment variables are only needed for automation (CI/CD, scripting) to skip the interactive prompt:
 
 ```bash
-# Pre-configure plans (skips the interactive prompt)
-TESSERA_CLAUDE_PLAN=max
-TESSERA_CODEX_PLAN=plus
-TESSERA_GEMINI_PLAN=free
-
-# Custom tool order (overrides plan-based ordering)
-TESSERA_TOOL_PREFERENCE=gemini,claude,codex
-
-# Never use a specific tool
-TESSERA_TOOL_EXCLUDE=codex
+# Optional — set in system environment or shell profile (~/.bashrc, ~/.zshrc)
+# If not set, the installer asks interactively.
+TESSERA_CLAUDE_PLAN=max       # max | pro | free
+TESSERA_CODEX_PLAN=plus       # plus | free
+TESSERA_GEMINI_PLAN=free      # pro | free
+TESSERA_TOOL_PREFERENCE=gemini,claude,codex  # custom tool order
+TESSERA_TOOL_EXCLUDE=codex    # never use this tool
 ```
 
 ```
