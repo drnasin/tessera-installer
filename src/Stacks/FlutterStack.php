@@ -194,33 +194,13 @@ STEP 2 — CONFIGURE:
 
 IMPORTANT: Use features appropriate for the detected Dart/Flutter version.
 
-VISUAL IDENTITY — THINK BEFORE YOU DESIGN:
-Before choosing colors or theme, ask: What does this app DO? Who uses it?
-A fitness app needs energy and bold colors. A banking app needs trust and calm blues.
-A food delivery app needs warmth and appetite. A productivity app needs clean minimalism.
-Design for the USER, not for developers. Light themes are standard for most mobile apps.
-
-SELF-CHECK — After creating each screen, verify:
-- Does every screen handle loading state? (shimmer/skeleton, not blank screen)
-- Does every screen handle empty state? (no orders yet, no products found)
-- Does every screen handle error state? (network failure, server error)
-- Are all interactive elements large enough for touch? (minimum 44px)
-- Does the screen look good on both phone and tablet?
-- Is the navigation intuitive? Can the user always go back?
-
-INTEGRATION CHECK — Your code does NOT exist in isolation.
-Before finishing, verify these connections:
-- If go_router defines a route ('/product/:id'), verify the screen file exists at the path you import.
-- If a screen reads a Riverpod provider, verify the provider exists and returns the expected type.
-- If a model has a fromJson factory, verify the API response field names match exactly.
-- If a screen navigates to another (context.push('/cart')), verify that route is defined in router.dart.
-- If pubspec.yaml lists a dependency, verify you actually import and use it.
-- If config.dart defines an API_URL, verify the HTTP client uses it.
-Rule: NEVER assume a route, provider, or field name — READ the code and match it exactly.
-
-PACKAGE VERIFICATION — Before using any import from a pub dependency:
-Run: cat pubspec.lock | grep -A2 "[package_name]" to verify it's installed.
-Check the actual API — don't assume class names or methods from memory.
+THREE RULES:
+1. DESIGN FOR THE USER. Ask what the app does and who uses it before choosing colors or theme.
+   Light themes for most apps. Design for the user, not for developers.
+2. USE THE APP IN YOUR HEAD. Tap every button, navigate every screen, go back, rotate the phone.
+   Does every screen handle loading, empty, and error states? Is everything tappable (44px min)?
+3. VERIFY BEFORE YOU USE. Before referencing any route, provider, model field, or package —
+   read the source file where it's defined. Never assume names from memory.
 PROMPT,
                 verify: null,
                 skippable: true,

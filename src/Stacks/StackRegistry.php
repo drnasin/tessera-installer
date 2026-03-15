@@ -104,4 +104,15 @@ final class StackRegistry
     {
         self::$stacks[$stack->name()] = $stack;
     }
+
+    /**
+     * Reset registry state. For testing only.
+     *
+     * @internal
+     */
+    public static function reset(): void
+    {
+        self::$stacks = [];
+        self::$initialized = false;
+    }
 }

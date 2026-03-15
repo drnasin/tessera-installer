@@ -184,33 +184,13 @@ IF E-COMMERCE is YES:
 
 IMPORTANT: Use features appropriate for the detected Node.js version.
 
-VISUAL IDENTITY — THINK BEFORE YOU STYLE:
-Before choosing colors or layout, ask: What does this business DO? Who are the customers?
-A bike shop needs energy and sport vibes. A law firm needs trust. A restaurant needs warmth.
-NEVER default to dark themes unless the business calls for it (gaming, nightclub).
-Most businesses need light backgrounds — they make products and text look better.
-
-SELF-CHECK — After creating each page/component, verify:
-- Can I read ALL text against its background? (white text on light bg = invisible)
-- Do form inputs have visible borders? (white inputs on white = invisible)
-- Is there a clear visual hierarchy? Most important content in 2 seconds?
-- Do interactive elements have hover/focus states?
-- Does the page work on a 375px phone screen?
-- Are loading, empty, and error states handled?
-
-INTEGRATION CHECK — Your code does NOT exist in isolation.
-Before finishing, verify these connections:
-- If you reference an API route (/api/products), verify the handler exists and uses that path.
-- If middleware checks a header (Authorization: Bearer), verify the frontend sends it.
-- If a page imports a component, verify the component file exists and is exported.
-- If you use an environment variable (process.env.STRIPE_KEY), verify it's in .env.example.
-- If Prisma schema defines a relation, verify the API actually includes/joins it.
-- If a webhook URL is configured (/api/webhooks/stripe), verify the handler parses the correct payload.
-Rule: NEVER assume a name, path, or variable exists — READ the code and match it exactly.
-
-PACKAGE VERIFICATION — Before using any import from a dependency:
-Run: cat node_modules/[package]/package.json | head -5 to verify the package is installed.
-Check the actual export names — don't assume API from memory.
+THREE RULES:
+1. DESIGN FOR THE BUSINESS. Ask what the business does and who the customers are before choosing
+   colors or layout. Light backgrounds for most businesses. Dark only if the brand demands it.
+2. USE IT LIKE A CUSTOMER. Open every page in your head. Click every link, read every text,
+   submit every form, browse on a phone. If anything is broken or invisible — fix it.
+3. VERIFY BEFORE YOU USE. Before referencing any route, import, env var, or API path — read
+   the source file where it's defined. Never assume names from memory.
 PROMPT,
                 verify: function (): ?string {
                     return is_file($this->fullPath.'/package.json') ? null : 'package.json not created';

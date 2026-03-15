@@ -162,26 +162,12 @@ STEP 2 — CREATE:
 IMPORTANT: Use modern Go features appropriate for {$goVersion}.
 Use generics, slog, and other modern features if the version supports them.
 
-SELF-CHECK — After creating each handler/service, verify:
-- Does every handler return proper HTTP status codes? (201 for create, 404 for not found)
-- Are all errors wrapped with context? (fmt.Errorf("create order: %w", err))
-- Does every database query handle sql.ErrNoRows?
-- Are all request bodies validated before processing?
-- Do webhook handlers verify signatures before processing payloads?
-
-INTEGRATION CHECK — Your code does NOT exist in isolation.
-Before finishing, verify these connections:
-- If a handler uses a repository method (repo.FindByID), verify that method exists on the interface.
-- If router registers a path (/api/v1/products), verify the handler function signature matches.
-- If middleware reads a header or query param, verify the client/frontend sends it with that exact name.
-- If a migration creates a column (price_cents INT), verify the struct field matches (PriceCents int).
-- If a service calls another service, verify the method exists with the correct signature.
-- If .env.example lists a variable (STRIPE_SECRET_KEY), verify the config loader reads it.
-Rule: NEVER assume a function, column, or variable name — READ the source file and match it exactly.
-
-PACKAGE VERIFICATION — Before using any import:
-Run: grep -r "module " go.mod to verify the module path.
-Check that imported packages exist in go.mod or are part of the standard library.
+TWO RULES:
+1. TEST IT IN YOUR HEAD. Trace every request from client to handler to database and back.
+   Does the route exist? Does the handler return the right status code? Does the struct match
+   the migration? If anything doesn't connect — fix it before moving on.
+2. VERIFY BEFORE YOU USE. Before referencing any function, struct field, package, or env var —
+   read the source file where it's defined. Never assume names from memory.
 PROMPT,
                 verify: function (): ?string {
                     return is_file($this->fullPath.'/go.mod') ? null : 'go.mod not created';

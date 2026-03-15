@@ -145,29 +145,14 @@ DESIGN — make it look like a REAL website a client would pay for:
 CONTENT: Write like a professional copywriter. Compelling headlines,
 clear value propositions, realistic testimonials with local-sounding names.
 
-VISUAL IDENTITY — THINK BEFORE YOU STYLE:
-Before choosing colors, ask: What does this business DO? What emotion should the site evoke?
-A gym needs energy and bold contrasts. A spa needs calm and soft pastels. A tech startup needs
-clean minimalism. A bakery needs warmth and appetite.
-NEVER default to dark themes unless the business calls for it (gaming, nightclub, cinema).
-Most businesses need light backgrounds — they make content, photos, and CTAs stand out.
-
-SELF-CHECK — After creating each page, verify:
-- Can I read ALL text against its background? (white text on light bg = invisible)
-- Do buttons and links look clickable? (clear hover states, pointer cursor)
-- Does the contact form actually submit somewhere? (formspree action URL correct?)
-- Does navigation work on mobile? (hamburger opens/closes, links navigate correctly)
-- Is there a clear CTA above the fold on every page?
-- Does the site look professional enough that a client would pay for it?
-
-INTEGRATION CHECK — Your code does NOT exist in isolation.
-Before finishing, verify:
-- If index.html links to /about.html, verify about.html exists.
-- If a page includes a script (src="./main.js"), verify the file exists at that path.
-- If Alpine.js x-data references a function, verify it's defined.
-- If a contact form has action="https://formspree.io/f/xxx", note it in SETUP.md as needing configuration.
-- If Vite config lists multiple entries, verify each entry file exists.
-Rule: NEVER assume a file, path, or ID exists — check it.
+THREE RULES:
+1. DESIGN FOR THE BUSINESS. Ask what the business does before choosing colors.
+   Light backgrounds for most businesses. Dark only if the brand demands it.
+2. USE IT LIKE A VISITOR. Open every page in your head. Click every link — does it go somewhere?
+   Read every text — can you see it? Submit the contact form — does it work? Browse on a phone.
+   Would a client pay for this? If not — improve it.
+3. VERIFY BEFORE YOU LINK. Every href, every script src, every form action must point to
+   something that exists. If about.html doesn't exist, don't link to it.
 PROMPT,
                 verify: function (): ?string {
                     if (is_file($this->fullPath.'/index.html')) {

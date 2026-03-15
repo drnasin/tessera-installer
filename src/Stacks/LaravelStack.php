@@ -643,14 +643,12 @@ ROUTE ORDERING (CRITICAL — this causes 404 errors if wrong):
   Closures break `php artisan route:cache` which is required for production.
 - If the shop has routes, load routes/shop.php BEFORE the catch-all but inside 'then:'.
 
-VERIFICATION PRINCIPLES (apply throughout):
-- Every class import must resolve to an actual class in the installed package version. If unsure, check the package source.
-- Route closures that receive models via route model binding must type-hint their parameters.
-- Livewire component registrations must use fully-qualified class names (not relative namespace paths that could conflict with the Livewire package namespace).
-- All code must work correctly when the locale is switched — verify mentally by tracing the data flow.
-- Every Livewire full-page component (one that returns a view with ->layout()) MUST have the
-  layout declaration. Without it, Livewire renders the component without any HTML structure (no <html>, no <head>).
-  Use either: `->layout('layouts.shop')` in render(), or `#[Layout('layouts.shop')]` attribute on the class.
+TWO RULES THAT APPLY TO EVERYTHING YOU CREATE:
+1. Before using ANY class, method, column, or config key — verify it exists by reading the source.
+   Run `find` or `grep` if unsure. Never rely on memory — the installed version may differ.
+2. Test every feature in your head as a user. Switch locale — does it still work?
+   Click every route — does it resolve? Submit every form — does it save?
+   Render every Livewire component — does it have a layout? If not, it's broken.
 
 STEP 3 — IF E-COMMERCE ({$shop}):
 You are an E-COMMERCE EXPERT building a real online shop. Think like one.
@@ -858,35 +856,20 @@ Colors: {$designColors}
 Content language: {$langs}
 Images: use curator_url(\$block->data['image']) helper for all media
 
-SELF-CHECK — After creating each page/component, mentally render it and verify:
-- Can I read ALL text against its background? (white text on light backgrounds = invisible)
-- ALL text content (names, titles, prices, descriptions) must be visible WITHOUT hovering.
-  Hover states add visual polish, but content must be readable in the DEFAULT state.
-  If a product card shows the name only on hover — that is WRONG. Users can't hover on mobile.
-- Do form inputs have visible borders/backgrounds? (white inputs on white = invisible)
-- Is there enough contrast between sections? (alternating backgrounds help)
-- Do interactive elements have hover/focus/active states?
-- Does the page make sense on a 375px phone screen?
-- Is there a clear visual hierarchy? Can I tell what's most important in 2 seconds?
-- Are loading states handled? (wire:loading for Livewire, spinners for async actions)
-- Are empty states handled? (empty cart, no search results, no orders yet)
-- Are error states handled? (form validation, payment failure, 404 pages)
+TWO RULES THAT PREVENT ALL COMMON MISTAKES:
 
-INTEGRATION CHECK — Your code does NOT exist in isolation. Other AI steps already created
-middleware, routes, models, and services. Your views and components must match what already exists.
-Before finishing, verify these connections:
-- If you use a query parameter (?locale=, ?sort=, ?page=), READ the middleware or controller
-  that handles it. Use the SAME parameter name — don't guess, check the actual source file.
-- If you reference a route name (route('shop.cart')), run: grep -r "->name(" routes/ to verify it exists.
-- If you call a Livewire component (<livewire:cart-widget />), verify the class exists in app/Livewire/.
-- If you use a helper (curator_url(), active_page()), verify it exists in app/Core/helpers.php.
-- If you use a config value (config('platform.supported_locales')), verify the config file has that key.
-- NEVER hardcode page URLs as href="/about" or href="/dostava" in blade views.
-  These pages may not exist. All navigation links must come from the Navigation model
-  or use route() helper for named routes. The only acceptable hardcoded paths are
-  well-known routes like /shop, /admin, or / (homepage).
-Rule: NEVER assume another part of the codebase uses a specific name — READ IT and match it exactly.
-If ANY answer is "no" — fix it before moving on.
+1. USE IT LIKE A CUSTOMER.
+   After writing each file, open the page in your head as a first-time visitor.
+   Click every link — does it go somewhere real? Read every text — can you see it?
+   Fill out every form — does it submit? Browse on a phone — does it work?
+   If something is broken, invisible, or confusing — fix it before moving on.
+
+2. EVERYTHING DYNAMIC COMES FROM THE DATABASE.
+   If an admin might want to change it — it must NOT be in code.
+   Navigation links, footer links, page content, business info, colors, labels —
+   all from the database via models (Navigation, Page, Block) or config files.
+   The only hardcoded URLs are framework routes (/shop, /admin, /).
+   If you write href="/about" in a blade file — that is WRONG. Use the Navigation model.
 PROMPT,
                 verify: function (): ?string {
                     if (! is_file($this->fullPath.'/resources/views/themes/default/layouts/master.blade.php')) {
@@ -1036,15 +1019,11 @@ PRINCIPLES:
 - If you're unsure whether the admin needs a particular feature — they do.
   A good admin panel is COMPLETE. The admin should never need to touch code or config files.
 
-INTEGRATION CHECK — Your code does NOT exist in isolation. Other AI steps already created
-models, middleware, routes, services, and theme views. Your admin resources must match them.
-Before finishing, verify:
-- Every model you create a Resource for actually EXISTS in app/. Read the model file first.
-- Column names in your table() match the ACTUAL database migration column names — read the migration.
-- If the theme uses specific block data keys (e.g., \$block->data['heading']), your Builder
-  form fields MUST use those EXACT keys. Read the blade views in resources/views/themes/default/blocks/.
-- If you reference a relationship in the resource, verify it exists on the model.
-Rule: NEVER assume a column, relationship, or key name — READ the source file and match it exactly.
+TWO RULES:
+1. Before using ANY name (column, relationship, key, class) — READ the source file where it's defined.
+   Never assume. Open the migration, model, or blade view and match the exact name.
+2. Test it in your head: open each admin page, click each button, fill each form.
+   Does it work? Does it save? Does the data appear on the frontend?
 PROMPT,
                 verify: function (): ?string {
                     // Check for any Resource file in Filament dir
