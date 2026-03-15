@@ -215,6 +215,77 @@ final class ToolRouter
         return reset($this->tools);
     }
 
+    /**
+     * Resolve a reviewer tool+model — a DIFFERENT perspective from the primary.
+     *
+     * Strategy:
+     * - If multiple tools available: use a different tool (cheapest model)
+     * - If single tool with multiple models: use same tool, lighter model
+     * - Returns null if review is not possible (single tool, single model)
+     *
+     * The reviewer should be cheap/fast — it reads code, not generates it.
+     */
+    public function resolveReviewer(Complexity $taskComplexity): ?ToolSelection
+    {
+        $primary = $this->resolve($taskComplexity);
+
+        if ($primary === null) {
+            return null;
+        }
+
+        $primaryToolName = $primary->tool->name();
+        $preferredOrder = $this->preference->orderedTools(array_keys($this->tools));
+
+        // Strategy 1: Use a DIFFERENT tool (cheapest model of that tool)
+        foreach ($preferredOrder as $name) {
+            if ($name === $primaryToolName) {
+                continue;
+            }
+
+            if (! $this->rateLimits->isAvailable($name) || ! isset($this->tools[$name])) {
+                continue;
+            }
+
+            // Use the cheapest model of the other tool for review
+            $model = self::MODEL_MAP[$name]['simple'] ?? null;
+
+            return new ToolSelection($this->tools[$name], $model);
+        }
+
+        // Strategy 2: Same tool, lighter model (e.g., Opus generated → Haiku reviews)
+        $lighterModel = $this->lighterModel($primaryToolName, $primary->model);
+
+        if ($lighterModel !== null && $lighterModel !== $primary->model) {
+            return new ToolSelection($primary->tool, $lighterModel);
+        }
+
+        // Cannot provide a different perspective
+        return null;
+    }
+
+    /**
+     * Get a lighter model for the same tool.
+     * Opus → Haiku, Sonnet → Haiku, Pro → Flash.
+     */
+    private function lighterModel(string $toolName, ?string $currentModel): ?string
+    {
+        if ($currentModel === null) {
+            return null; // codex has no model selection
+        }
+
+        $models = self::MODEL_MAP[$toolName] ?? [];
+        $simple = $models['simple'] ?? null;
+        $medium = $models['medium'] ?? null;
+
+        // If current is complex or medium, drop to simple
+        if ($currentModel !== $simple) {
+            return $simple;
+        }
+
+        // Already on the lightest model — no lighter alternative
+        return null;
+    }
+
     public function usage(): UsageTracker
     {
         return $this->usage;

@@ -245,4 +245,79 @@ final class ToolRouterTest extends TestCase
 
         $this->assertSame(0, $router->usage()->totalCalls());
     }
+
+    // --- Reviewer tests ---
+
+    #[Test]
+    public function reviewer_uses_different_tool_when_multiple_available(): void
+    {
+        $router = $this->makeRouter(['claude', 'gemini']);
+        $reviewer = $router->resolveReviewer(Complexity::COMPLEX);
+
+        $this->assertNotNull($reviewer);
+        // Primary for COMPLEX is claude, so reviewer should be gemini
+        $primary = $router->resolve(Complexity::COMPLEX);
+        $this->assertNotSame($primary->tool->name(), $reviewer->tool->name());
+    }
+
+    #[Test]
+    public function reviewer_uses_cheapest_model_of_other_tool(): void
+    {
+        $router = $this->makeRouter(['claude', 'gemini']);
+        $reviewer = $router->resolveReviewer(Complexity::COMPLEX);
+
+        $this->assertNotNull($reviewer);
+        // Should use the simple (cheapest) model of the other tool
+        if ($reviewer->tool->name() === 'gemini') {
+            $this->assertStringContainsString('flash', $reviewer->model);
+        }
+    }
+
+    #[Test]
+    public function reviewer_uses_lighter_model_when_single_tool(): void
+    {
+        $router = $this->makeRouter(['claude']);
+        $reviewer = $router->resolveReviewer(Complexity::COMPLEX);
+
+        $this->assertNotNull($reviewer);
+        // Same tool, but lighter model (opus → haiku)
+        $this->assertSame('claude', $reviewer->tool->name());
+        $this->assertStringContainsString('haiku', $reviewer->model);
+    }
+
+    #[Test]
+    public function reviewer_returns_null_for_codex_only(): void
+    {
+        $router = $this->makeRouter(['codex']);
+        // Codex has no model selection — can't provide a different perspective
+        $reviewer = $router->resolveReviewer(Complexity::COMPLEX);
+
+        $this->assertNull($reviewer);
+    }
+
+    #[Test]
+    public function reviewer_skips_rate_limited_tools(): void
+    {
+        $router = $this->makeRouter(['claude', 'gemini', 'codex']);
+        $router->rateLimits()->markRateLimited('gemini');
+
+        $reviewer = $router->resolveReviewer(Complexity::COMPLEX);
+        $this->assertNotNull($reviewer);
+        // Gemini is rate-limited, so reviewer should be codex (next available different tool)
+        $this->assertNotSame('claude', $reviewer->tool->name());
+        $this->assertNotSame('gemini', $reviewer->tool->name());
+    }
+
+    #[Test]
+    public function reviewer_falls_back_to_lighter_model_when_all_others_unavailable(): void
+    {
+        $router = $this->makeRouter(['claude', 'gemini']);
+        $router->rateLimits()->markDead('gemini');
+
+        $reviewer = $router->resolveReviewer(Complexity::COMPLEX);
+        $this->assertNotNull($reviewer);
+        // Gemini dead, so falls back to claude with lighter model
+        $this->assertSame('claude', $reviewer->tool->name());
+        $this->assertStringContainsString('haiku', $reviewer->model);
+    }
 }

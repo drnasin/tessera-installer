@@ -607,6 +607,33 @@ PROMPT,
                 skippable: true,
                 timeout: $this->aiTimeout,
             );
+            // Peer review: a different AI checks the theme for UX issues
+            $this->steps->review(
+                stepName: 'frontend theme',
+                reviewPrompt: <<<'REVIEW'
+You are a UX REVIEWER. Read ALL files in resources/views/themes/default/ and resources/css/app.css.
+
+Check for these specific issues and list ONLY actual problems you find:
+- Dark theme used for a business that shouldn't have one (most businesses need light backgrounds)
+- Text invisible against its background (low contrast, same color text and bg)
+- Content only visible on hover (product names, prices — must be visible in default state)
+- Links pointing to pages that don't exist (href="/about" but no /about route or page)
+- Footer links hardcoded instead of coming from Navigation model
+- Form inputs invisible (white inputs on white background)
+- Missing mobile responsiveness (no responsive classes)
+
+Format each issue as:
+- CRITICAL/MEDIUM/LOW: description of the issue and which file
+
+If everything looks good, respond with: "No issues found."
+REVIEW,
+                fixPrompt: <<<'FIX'
+A peer reviewer found issues in the frontend theme. Fix ALL of them.
+Read each issue carefully and make the necessary changes to the blade views and CSS.
+Do not break existing functionality — only fix what the reviewer identified.
+FIX,
+            );
+
             $this->memory->completeStep('theme');
         } // end if !isStepDone('theme')
 
@@ -649,8 +676,33 @@ PROMPT,
             );
             $this->memory->completeStep('admin');
 
-            // Auto-fix Filament namespaces (AI often uses wrong version's namespaces)
+            // Auto-fix Filament namespaces (version-agnostic, reads vendor/)
             $this->fixFilamentNamespaces();
+
+            // Peer review: verify admin resources match models and theme
+            $this->steps->review(
+                stepName: 'admin panel',
+                reviewPrompt: <<<'REVIEW'
+You are a CODE REVIEWER. Read the Filament resources in app/Filament/Resources/.
+
+Check for these specific issues:
+- Resource references a model that doesn't exist in app/ (read the model files)
+- Table column names don't match actual migration column names (read migrations)
+- PageResource Builder block fields don't match blade view data keys
+  (read resources/views/themes/default/blocks/*.blade.php and compare)
+- Wrong Filament class imports (verify each use statement resolves to a real class)
+- Missing relationships referenced in resource (verify they exist on the model)
+
+Format each issue as:
+- CRITICAL/MEDIUM/LOW: file — description
+
+If everything matches correctly, respond with: "No issues found."
+REVIEW,
+                fixPrompt: <<<'FIX'
+A peer reviewer found issues in the Filament admin resources. Fix ALL of them.
+Read each issue carefully. Verify against the actual source files before making changes.
+FIX,
+            );
 
             // PHP lint — catch syntax errors before continuing
             $this->lintPhpFiles();

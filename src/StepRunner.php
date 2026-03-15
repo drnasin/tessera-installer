@@ -271,6 +271,129 @@ final class StepRunner
     }
 
     /**
+     * Run an AI-powered review of generated code.
+     *
+     * A DIFFERENT AI tool/model reviews what the primary AI generated.
+     * Two different "brains" looking at the same code catches mistakes
+     * that self-review misses (dark themes, wrong namespaces, dead links).
+     *
+     * Flow:
+     * 1. Reviewer reads the code and lists issues (structured feedback)
+     * 2. If issues found, primary AI applies fixes
+     * 3. Zero issues = skip fix step
+     *
+     * @param  string  $stepName  Display name for the review
+     * @param  string  $reviewPrompt  What to review and what to look for
+     * @param  string  $fixPrompt  Prompt template for fixing (issues appended)
+     * @param  Complexity  $originalComplexity  Complexity of the original step (for fix routing)
+     */
+    public function review(
+        string $stepName,
+        string $reviewPrompt,
+        string $fixPrompt,
+        Complexity $originalComplexity = Complexity::COMPLEX,
+        int $timeout = 120,
+    ): void {
+        $reviewer = $this->router->resolveReviewer($originalComplexity);
+
+        if ($reviewer === null) {
+            return; // No reviewer available — skip silently
+        }
+
+        Console::line();
+        Console::spinner("  Peer review: {$stepName}");
+
+        $toolName = $reviewer->tool->name();
+        $modelDisplay = $reviewer->model !== null ? basename($reviewer->model) : 'default';
+        Console::line("  Reviewer: {$toolName} ({$modelDisplay})");
+
+        $this->router->usage()->record($toolName, $reviewer->model);
+        $response = $reviewer->tool->execute($reviewPrompt, $this->workingDir, $timeout, $reviewer->model);
+
+        if (! $response->success) {
+            Console::warn('  Review failed — skipping');
+
+            return;
+        }
+
+        $reviewOutput = trim($response->output);
+
+        // Check if reviewer found issues
+        if ($reviewOutput === '' || $this->reviewFoundNoIssues($reviewOutput)) {
+            Console::success('  Review: no issues found');
+
+            return;
+        }
+
+        // Issues found — count them
+        $issueCount = $this->countReviewIssues($reviewOutput);
+        Console::warn("  Review found {$issueCount} issue(s) — applying fixes...");
+
+        // Send issues to primary AI to fix
+        $fullFixPrompt = $fixPrompt."\n\nISSUES FOUND BY REVIEWER:\n".$reviewOutput;
+
+        $fixResponse = $this->router->executeWithFallback(
+            $fullFixPrompt,
+            $this->workingDir,
+            $originalComplexity,
+            $timeout * 2, // give more time for fixes
+        );
+
+        if ($fixResponse->success) {
+            Console::success("  Review fixes applied ({$issueCount} issues)");
+        } else {
+            Console::warn('  Could not apply all review fixes');
+        }
+    }
+
+    /**
+     * Check if the review output indicates no issues.
+     */
+    private function reviewFoundNoIssues(string $output): bool
+    {
+        $lower = strtolower($output);
+
+        $noIssuePatterns = [
+            'no issues',
+            'no problems',
+            'looks good',
+            'all good',
+            'no errors',
+            'everything is correct',
+            'no changes needed',
+            'lgtm',
+            '0 issues',
+            'no critical',
+        ];
+
+        foreach ($noIssuePatterns as $pattern) {
+            if (str_contains($lower, $pattern)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Estimate the number of issues from review output.
+     */
+    private function countReviewIssues(string $output): int
+    {
+        // Count lines starting with - or * or numbered (1. 2. 3.)
+        $count = 0;
+
+        foreach (explode("\n", $output) as $line) {
+            $trimmed = ltrim($line);
+            if (preg_match('/^[-*•]\s|^\d+[.)]\s|^(CRITICAL|HIGH|MEDIUM|LOW):/i', $trimmed)) {
+                $count++;
+            }
+        }
+
+        return max(1, $count); // At least 1 if we got here
+    }
+
+    /**
      * Get the log of all steps and their outcomes.
      *
      * @return array<string, string>
