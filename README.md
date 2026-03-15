@@ -489,7 +489,7 @@ The AI reads the codebase and understands the project structure, so you don't ne
 
 ## Testing
 
-91 tests, 147 assertions — all passing with zero token usage (no AI calls in tests).
+125 tests, 213 assertions — all passing with zero token usage (no AI calls in tests).
 
 ```bash
 vendor/bin/phpunit
