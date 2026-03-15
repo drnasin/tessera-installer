@@ -79,8 +79,10 @@ final class NewCommand
 
     private function preflight(): bool
     {
-        // Check AI tools (with user preferences from env)
-        $this->router = ToolRouter::detect(ToolPreference::fromEnv());
+        // Check AI tools
+        $preference = $this->resolveToolPreference();
+
+        $this->router = ToolRouter::detect($preference);
 
         if ($this->router === null) {
             Console::error('No AI tool found!');
@@ -693,6 +695,63 @@ PROMPT;
         Console::line('  For further changes:');
         Console::line('    tessera "what you need"');
         Console::line();
+    }
+
+    /**
+     * Determine tool preferences — from env vars or by asking the user.
+     */
+    private function resolveToolPreference(): ToolPreference
+    {
+        $envPref = ToolPreference::fromEnv();
+
+        // If plans are already configured via env vars, use them
+        if (! empty($envPref->plans())) {
+            return $envPref;
+        }
+
+        // Detect available tools first
+        $detected = AiTool::detectAllInstances();
+
+        if (empty($detected)) {
+            return $envPref;
+        }
+
+        // Plan options per tool
+        $planOptions = [
+            'claude' => ['max' => 'Max (unlimited)', 'pro' => 'Pro', 'free' => 'Free'],
+            'codex' => ['plus' => 'Plus (ChatGPT Plus)', 'free' => 'Free'],
+            'gemini' => ['pro' => 'Pro (Google One AI Premium)', 'free' => 'Free'],
+        ];
+
+        $plans = [];
+
+        Console::line();
+        Console::bold('What AI plans do you have? (affects which tool handles each task)');
+
+        foreach ($detected as $name => $tool) {
+            if (! isset($planOptions[$name])) {
+                continue;
+            }
+
+            $options = $planOptions[$name];
+            $optionValues = array_keys($options);
+            $optionLabels = array_values($options);
+
+            // Default to last option (free)
+            $defaultIndex = count($optionLabels) - 1;
+
+            $choice = Console::choice(
+                ucfirst($name).' plan:',
+                $optionLabels,
+                $defaultIndex,
+            );
+
+            $plans[$name] = $optionValues[$choice];
+        }
+
+        Console::line();
+
+        return new ToolPreference(plans: $plans);
     }
 
     private function formatConversation(array $conversation): string
