@@ -271,6 +271,15 @@ After the admin step, Tessera scans `app/Filament/` files and builds a class map
 ### PHP Lint Post-Build
 After the admin step, Tessera runs `php -l` on all generated PHP files to catch syntax errors early — missing semicolons, malformed classes, etc. Zero tokens, instant feedback.
 
+### AI Peer Review
+After generating the frontend theme and admin panel, a **different AI tool or model** reviews the output and lists issues. If issues are found, the primary AI applies fixes.
+
+- Multiple tools installed: different tool reviews (e.g., Claude generates → Gemini reviews)
+- Single tool: lighter model reviews (e.g., Opus generates → Haiku reviews)
+- Cost: 1 cheap AI call per reviewed step. Free for unlimited plans.
+
+The reviewer checks for UX issues (dark theme on wrong business, invisible text, dead links) and integration issues (wrong column names, mismatched data keys, missing relationships).
+
 ### Self-Healing Tests
 After building the project, AI generates tests and runs them. If any test fails, AI analyzes the output and fixes the issue — either in the test or in the code. Up to 3 attempts.
 
@@ -489,7 +498,7 @@ The AI reads the codebase and understands the project structure, so you don't ne
 
 ## Testing
 
-125 tests, 213 assertions — all passing with zero token usage (no AI calls in tests).
+131 tests, 227 assertions — all passing with zero token usage (no AI calls in tests). CI runs on Ubuntu, Windows, and macOS with PHP 8.2–8.5.
 
 ```bash
 vendor/bin/phpunit
