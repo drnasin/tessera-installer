@@ -679,6 +679,10 @@ PROMPT,
                 timeout: $this->aiTimeout,
             );
             $this->memory->completeStep('content');
+
+            // Post-content verification: check routes and lint
+            $this->verifyRoutes();
+            $this->lintPhpFiles();
         } // end if !isStepDone('content')
 
         // Step E: Generate tests
@@ -1196,6 +1200,38 @@ HELPER);
     private function makeRelativeRef(string $fqcn): string
     {
         return '\\'.$fqcn;
+    }
+
+    /**
+     * Verify that route:list works and log the result.
+     * Catches misconfigured routes, missing controllers, and broken imports.
+     * Runs after content seeding so the DB is populated.
+     */
+    private function verifyRoutes(): void
+    {
+        $result = Console::execSilent('php artisan route:list --json 2>&1', $this->fullPath);
+
+        if ($result['exit'] !== 0) {
+            Console::warn('  Route verification failed:');
+
+            // Extract the most useful error line
+            $lines = explode("\n", $result['output']);
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if ($line !== '' && ! str_starts_with($line, 'at ') && ! str_starts_with($line, '#')) {
+                    Console::warn('    '.$line);
+                    break;
+                }
+            }
+
+            return;
+        }
+
+        // Check for registered routes count
+        $routes = json_decode($result['output'], true);
+        if (is_array($routes)) {
+            Console::success('  Routes verified: '.count($routes).' routes registered');
+        }
     }
 
     /**

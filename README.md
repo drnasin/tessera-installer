@@ -71,8 +71,13 @@ $ tessera new my-restaurant
 ║   Describe what you need, AI decides ║
 ╚══════════════════════════════════════╝
 
-✓ AI: claude
+✓ AI: claude, gemini, codex
 ✓ OS: windows (scoop)
+
+What AI plans do you have? (affects which tool handles each task)
+  Claude plan: [Max (unlimited) / Pro / Free]  > Max (unlimited)
+  Codex plan:  [Plus (ChatGPT Plus) / Free]    > Free
+  Gemini plan: [Pro (Google One AI Premium) / Free] > Free
 
 AI: Tell me about the project — what does the client do?
 > A restaurant in Split, they need a website with a menu and online reservations
@@ -106,17 +111,19 @@ Building your project — this takes about 10-15 minutes.
 ⏳ [4/8] Publishing configs...
 ⏳ [5/8] Creating project structure...
 [6/8] AI is building your project — this is the big one...
-  ✓ Creating database models and services
-  ✓ Designing frontend theme and pages
-  ✓ Building admin panel
-  ✓ Writing content and seeding data
-  ✓ Generating tests
+  ✓ Creating database models and services       (claude opus)
+  ✓ Designing frontend theme and pages           (claude opus)
+  ✓ Building admin panel                         (claude sonnet)
+  ✓ Writing content and seeding data             (claude sonnet)
+  ✓ Generating tests                             (claude sonnet)
   ✓ All tests passing
-  ✓ Generating setup instructions for developer
+  ✓ Generating setup instructions for developer  (claude haiku)
 
 ╔══════════════════════════════════════╗
 ║         PROJECT IS READY!            ║
 ╚══════════════════════════════════════╝
+
+  AI usage: claude: 5 calls (2 opus, 2 sonnet, 1 haiku) | gemini: 1 call (1 flash)
 
   IMPORTANT: Read SETUP.md for configuration steps!
 
@@ -188,36 +195,46 @@ AI detects your operating system, package managers, and installed tools. Every A
 If the chosen stack needs a tool you don't have (e.g., Node.js for frontend assets), AI offers to install it automatically using the right package manager for your OS.
 
 ### Intelligent Cross-Tool Routing
+
 When multiple AI tools are installed, Tessera routes each task to the **best tool AND model** for the job — switching between tools mid-build:
 
-| Complexity | Default routing | Fallback chain | Use cases |
-|---|---|---|---|
-| **Simple** | Gemini Flash | Claude Haiku → Codex | SETUP.md, config, fixes |
-| **Medium** | Claude Sonnet | Gemini Pro → Claude Haiku → Gemini Flash | Content, tests, seeding |
-| **Complex** | Claude Opus | Gemini Pro → Claude Sonnet → Gemini Flash | Architecture, models, theme |
+| Complexity | Default routing | Fallback chain |
+|---|---|---|
+| **Simple** | Gemini Flash | Claude Haiku > Codex > Claude Sonnet > Gemini Pro |
+| **Medium** | Claude Sonnet | Gemini Pro > Claude Haiku > Gemini Flash > Codex |
+| **Complex** | Claude Opus | Gemini Pro > Claude Sonnet > Gemini Flash > Codex |
 
 A single build might use Claude Opus for database architecture, Gemini Flash for SETUP.md, and Claude Sonnet for tests — each task gets the right tool.
 
-**Rate limit awareness:** If a tool hits rate limits mid-build, Tessera automatically switches to the next available tool+model. No manual intervention needed.
+**Rate limit awareness:** If a tool hits rate limits mid-build, Tessera detects the error, marks the tool as unavailable with a 2-minute cooldown, and switches to the next tool in the fallback chain. No manual intervention needed.
 
-**Plan-aware:** Tell Tessera about your subscription plans so it knows which tools are free for you:
-```bash
-# Claude Max = unlimited, use for everything
-TESSERA_CLAUDE_PLAN=max
+### Plan-Aware Routing
 
-# ChatGPT Plus = Codex available
-TESSERA_CODEX_PLAN=plus
+Tessera asks about your subscription plans during preflight so it can route tasks intelligently:
 
-# Gemini free tier
-TESSERA_GEMINI_PLAN=free
+```
+What AI plans do you have? (affects which tool handles each task)
+  Claude plan: [Max (unlimited) / Pro / Free]
+  Codex plan:  [Plus (ChatGPT Plus) / Free]
+  Gemini plan: [Pro (Google One AI Premium) / Free]
 ```
 
-With `TESSERA_CLAUDE_PLAN=max`, Claude is preferred for ALL tasks (even simple ones) since it's unlimited — no reason to route to Gemini Flash when Haiku is free.
+Default is **Free** for each tool. If you have an unlimited plan (e.g., Claude Max), that tool is preferred for ALL tasks — even simple ones — since there's no cost concern.
 
-Available plans: `max` (unlimited), `pro`/`plus`/`paid` (generous limits), `free` (fallback only).
+| Plan tier | Examples | Routing behavior |
+|---|---|---|
+| **Unlimited** | Claude Max | Preferred for everything |
+| **Generous** | Claude Pro, Codex Plus | Preferred but balanced |
+| **Limited** | Free tiers | Fallback only |
 
-**Other preferences:**
+You can skip the interactive prompt by setting environment variables:
+
 ```bash
+# Pre-configure plans (skips the interactive prompt)
+TESSERA_CLAUDE_PLAN=max
+TESSERA_CODEX_PLAN=plus
+TESSERA_GEMINI_PLAN=free
+
 # Custom tool order (overrides plan-based ordering)
 TESSERA_TOOL_PREFERENCE=gemini,claude,codex
 
@@ -245,11 +262,25 @@ AI routing:
 AI usage: claude: 5 calls (3 opus, 2 sonnet) | gemini: 3 calls (3 flash)
 ```
 
+### Version-Agnostic Prompts
+AI prompts contain no hardcoded version information. Instead, AI verifies package versions against the actual `vendor/` directory in the generated project — so prompts stay correct across Laravel, Filament, and Livewire upgrades.
+
+### Filament Namespace Auto-Fix
+After the admin step, Tessera scans `app/Filament/` files and builds a class map from `vendor/filament/` source. If AI used incorrect Filament namespaces (common across major versions), they're fixed automatically — no tokens spent.
+
+### PHP Lint Post-Build
+After the admin step, Tessera runs `php -l` on all generated PHP files to catch syntax errors early — missing semicolons, malformed classes, etc. Zero tokens, instant feedback.
+
 ### Self-Healing Tests
 After building the project, AI generates tests and runs them. If any test fails, AI analyzes the output and fixes the issue — either in the test or in the code. Up to 3 attempts.
 
+### Homepage Rendering
+The generated catch-all route `/{slug?}` renders the homepage directly at `/` — no redirect to `/home` or `/pocetna`. The homepage slug comes from the database, so the admin can change it without touching code.
+
 ### Project Memory & Resume
-AI maintains state in `.tessera/state.json` — tracking completed steps, decisions, and notes. If a build fails, times out, or you cancel with Ctrl+C, progress is saved. Run the same command again and AI offers to **resume from where it stopped** — no need to re-describe the project or re-select the stack.
+AI maintains state in `.tessera/state.json` — tracking completed steps, decisions, and notes. State writes are **atomic** (write to temp file, then rename) to prevent corruption on crash or Ctrl+C.
+
+If a build fails, times out, or you cancel, progress is saved. Run the same command again and AI offers to **resume from where it stopped** — no need to re-describe the project or re-select the stack. On resume, the saved stack is used directly (AI stack selection is skipped).
 
 ```
 $ tessera new my-shop
@@ -278,17 +309,27 @@ $ tessera new my-shop
 ```
 
 ### Database Setup
-When you choose MySQL, MariaDB, or PostgreSQL, the installer asks for your credentials, tests the connection, and tries to create the database automatically.
+During preflight, the installer detects which database engines are available on your system (MySQL, MariaDB, PostgreSQL, SQLite). When you choose MySQL, MariaDB, or PostgreSQL, the installer asks for your credentials, tests the connection, and tries to create the database automatically.
 
 If something goes wrong:
 - **Wrong credentials** — you can retry with different credentials
 - **Can't create database** — installer waits for you to create it manually, then verifies
 - **Can't connect at all** — falls back to SQLite so the installation can continue
 
+### Console Environment Sanitization
+When spawning AI tool processes, the installer cleans environment variables (like `CLAUDECODE`) to prevent nesting protection from blocking execution — the same technique used by the Tessera AI Engine.
+
+### Error Visibility
+When a build step fails and falls back to another tool, the actual error message is shown in the console — not just "step failed". This makes debugging easier when all fallbacks are exhausted.
+
 ## Available Stacks
+
+All stacks use **universal principle-based rules** — 2-3 short principles per stack instead of long prescriptive checklists. AI reasons about what to build, not follows recipes.
 
 ### Laravel + Filament (fully autonomous)
 Websites, CMS, e-commerce, admin panels. AI sets up everything — models, migrations, theme, pages, blocks, admin resources, content, tests, and SETUP.md with configuration instructions.
+
+Prompts are extracted to `LaravelPrompts` for maintainability.
 
 ### Node.js / Next.js
 API servers, SaaS platforms, React/Vue applications. AI generates the full project structure with TypeScript, Prisma, Docker, and styled frontend. SETUP.md includes API docs and deployment instructions.
@@ -335,7 +376,7 @@ tessera new my-shop
 
 ### `tessera tools` — "Which AI tools do I have?"
 
-Shows which AI CLI tools (Claude, Codex, Gemini) are installed, and how tasks are routed based on complexity (which model handles simple vs. complex tasks).
+Shows which AI CLI tools (Claude, Codex, Gemini) are installed, and how tasks are routed based on complexity and your subscription plans.
 
 ```bash
 tessera tools
@@ -348,7 +389,7 @@ tessera tools
 
 ### `tessera --version`
 
-Shows the installed version.
+Shows the installed version (read from git tags at runtime).
 
 ```bash
 tessera --version
@@ -445,6 +486,14 @@ gemini "add dark mode toggle"
 ```
 
 The AI reads the codebase and understands the project structure, so you don't need to explain the architecture — just describe what you need.
+
+## Testing
+
+91 tests, 147 assertions — all passing with zero token usage (no AI calls in tests).
+
+```bash
+vendor/bin/phpunit
+```
 
 ## Adding a new stack
 
