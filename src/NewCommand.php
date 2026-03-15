@@ -459,7 +459,8 @@ From this conversation, extract project requirements. Respond with ONLY valid JS
     "payment_providers": [],
     "database": "sqlite",
     "expected_users": "low",
-    "special": ""
+    "special": "",
+    "user_requirements": "list ALL specific technical requests the user made verbatim — packages, tools, approaches, styles they explicitly asked for (e.g., 'use Laravel Breeze', 'dark theme', 'use Tailwind not Bootstrap'). If none, empty string."
 }
 
 IMPORTANT for database:

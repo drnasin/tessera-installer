@@ -24,7 +24,12 @@ final class LaravelPrompts
         string $shop,
         string $payments,
         string $country,
+        string $userRequirements = '',
     ): string {
+        $userReqBlock = $userRequirements !== ''
+            ? "\nUSER'S SPECIFIC REQUESTS (MUST follow — the user explicitly asked for these):\n{$userRequirements}\n"
+            : '';
+
         return <<<PROMPT
 You are a SENIOR Laravel developer building a Tessera CMS project from scratch.
 Think carefully about what THIS specific project needs before writing any code.
@@ -35,6 +40,7 @@ Think carefully about what THIS specific project needs before writing any code.
 
 STACK: {$stackVersions}
 You are in the project root directory. Directory structure already exists.
+{$userReqBlock}
 
 PROJECT: {$desc}
 LANGUAGES: {$langs}
@@ -170,11 +176,17 @@ PROMPT;
         string $designColors,
         string $langs,
         string $shop,
+        string $userRequirements = '',
     ): string {
+        $userReqBlock = $userRequirements !== ''
+            ? "\nUSER'S SPECIFIC REQUESTS (MUST follow — the user explicitly asked for these):\n{$userRequirements}\n"
+            : '';
+
         return <<<PROMPT
 CONTINUE working on the Tessera project. Models, migrations, controllers, and services are already created.
 Read them to understand the data structure before creating views.
 Read the Block model and BlockRegistry to understand the data flow.
+{$userReqBlock}
 
 YOUR ROLE: You are an EXPERIENCED UX DESIGNER and frontend developer.
 You don't just write HTML — you design EXPERIENCES. Every decision you make must answer:

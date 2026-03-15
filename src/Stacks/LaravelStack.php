@@ -543,6 +543,7 @@ PROMPT,
         $paymentProviders = $this->requirements['payment_providers'] ?? [];
         $payments = ! empty($paymentProviders) ? implode(', ', $paymentProviders) : 'none';
         $country = $this->requirements['country'] ?? '';
+        $userRequirements = $this->requirements['user_requirements'] ?? '';
         $stackVersions = $this->detectVersions();
         $systemContext = $this->system->buildAiContext();
         $memoryContext = $this->memory->buildAiContext();
@@ -555,7 +556,7 @@ PROMPT,
             $this->steps->runAi(
                 name: 'Creating database models and services',
                 complexity: Complexity::COMPLEX,
-                prompt: LaravelPrompts::models($systemContext, $memoryContext, $stackVersions, $desc, $langs, $shop, $payments, $country),
+                prompt: LaravelPrompts::models($systemContext, $memoryContext, $stackVersions, $desc, $langs, $shop, $payments, $country, $userRequirements),
                 verify: function (): ?string {
                     if (! is_file($this->fullPath.'/app/Core/Models/Page.php')) {
                         return 'Page model not created';
@@ -586,7 +587,7 @@ PROMPT,
             $this->steps->runAi(
                 name: 'Designing frontend theme and pages',
                 complexity: Complexity::COMPLEX,
-                prompt: LaravelPrompts::theme($desc, $needsFrontend, $designStyle, $designColors, $langs, $shop),
+                prompt: LaravelPrompts::theme($desc, $needsFrontend, $designStyle, $designColors, $langs, $shop, $userRequirements),
                 verify: function (): ?string {
                     if (! is_file($this->fullPath.'/resources/views/themes/default/layouts/master.blade.php')) {
                         return 'Master layout not created';
