@@ -1,0 +1,87 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  unit-tests:
+    name: PHPUnit (${{ matrix.os }}, PHP ${{ matrix.php }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        php: ['8.2', '8.3', '8.4']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: json, mbstring
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: PHP lint (all source files)
+        shell: bash
+        run: |
+          errors=0
+          for f in $(find src -name "*.php"); do
+            if ! php -l "$f" > /dev/null 2>&1; then
+              echo "FAIL: $f"
+              php -l "$f"
+              errors=$((errors + 1))
+            fi
+          done
+          if [ $errors -gt 0 ]; then
+            echo "Found $errors lint errors"
+            exit 1
+          fi
+          echo "All source files pass lint"
+
+      - name: Run unit & integration tests
+        run: vendor/bin/phpunit --colors=always
+
+  smoke-test:
+    name: CLI smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: json, mbstring
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: tessera --version
+        shell: bash
+        run: php bin/tessera --version
+
+      - name: tessera --help
+        shell: bash
+        run: php bin/tessera --help
+
+      - name: tessera doctor
+        shell: bash
+        run: php bin/tessera doctor
+
+      - name: tessera tools
+        shell: bash
+        run: php bin/tessera tools
