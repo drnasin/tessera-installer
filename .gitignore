@@ -6,3 +6,4 @@ composer.lock
 .vscode/
 *.swp
 TEST_*.md
+TESSERA_WEBSITE.md
