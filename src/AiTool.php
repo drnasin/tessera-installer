@@ -7,7 +7,7 @@ namespace Tessera\Installer;
 /**
  * Detects and executes AI CLI tools without any framework dependency.
  */
-final class AiTool
+class AiTool
 {
     private const TOOLS = [
         'claude' => [
@@ -42,6 +42,18 @@ final class AiTool
         $this->name = $name;
         $this->config = $config;
         $this->version = $version;
+    }
+
+    /**
+     * Create a tool instance for testing without system detection.
+     *
+     * @internal For testing only.
+     */
+    public static function fake(string $name, ?string $version = 'fake-1.0'): static
+    {
+        $config = self::TOOLS[$name] ?? self::TOOLS['claude'];
+
+        return new static($name, $config, $version);
     }
 
     /**
