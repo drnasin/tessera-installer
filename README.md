@@ -17,14 +17,6 @@ Verify it works:
 tessera --version
 ```
 
-## Quick Start
-
-```bash
-tessera new my-project
-```
-
-That's it. AI will ask you about your project — what it does, what languages, what payment provider, what design style — and build everything.
-
 ## System Check
 
 Before creating a project, check if your system is ready:
@@ -60,6 +52,14 @@ Optional (depends on stack):
 
   All good! Run: tessera new my-project
 ```
+
+## Quick Start
+
+```bash
+tessera new my-project
+```
+
+That's it. AI will ask you about your project — what it does, what languages, what payment provider, what design style — and build everything.
 
 ## What happens when you run `tessera new`
 
