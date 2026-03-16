@@ -2,6 +2,8 @@
 
 Create a new project with a single command. AI decides everything — you just describe what you need.
 
+> **Important:** Tessera uses your installed AI CLI tools (Claude, Gemini, Codex) to generate code. Each AI call consumes tokens from **your own subscription plan** — Tessera does not provide or pay for AI access. Generated code is produced by AI and may contain errors, security vulnerabilities, or incorrect implementations. Always review generated code before deploying to production. See [Disclaimer](#disclaimer) for full details.
+
 ## Installation
 
 ```bash
@@ -514,6 +516,16 @@ final class PythonStack implements StackInterface
     // ... implement scaffold(), preflight(), postSetup(), completionInfo()
 }
 ```
+
+## Disclaimer
+
+**AI Token Usage.** Tessera calls AI CLI tools installed on your system (Claude, Gemini, Codex). Each call consumes tokens from your own subscription plan or API quota. Tessera does not provide, manage, or pay for AI access. You are responsible for understanding your plan's limits, costs, and terms of service. A typical project build uses 5–10 AI calls.
+
+**Generated Code.** All code produced by Tessera is AI-generated. While Tessera includes safeguards (peer review, PHP lint, test generation, namespace auto-fix), AI-generated code may contain bugs, security vulnerabilities, incorrect business logic, or incompatible dependencies. You are responsible for reviewing, testing, and validating all generated code before use in any environment — especially production.
+
+**Third-Party Services.** Tessera may generate code that integrates with third-party services (payment providers, APIs, cloud services). These integrations are scaffolded based on AI interpretation and may require manual configuration, testing, and validation. Tessera is not affiliated with and makes no guarantees about any third-party service.
+
+**No Warranty.** This software is provided "as is", without warranty of any kind. The authors are not liable for any damages arising from the use of this software or any code it generates. Use at your own risk.
 
 ## License
 

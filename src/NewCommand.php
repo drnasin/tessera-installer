@@ -41,6 +41,7 @@ final class NewCommand
     public function run(): int
     {
         $this->showBanner();
+        $this->showFirstRunNotice();
 
         // Step 1: Preflight checks
         if (! $this->preflight()) {
@@ -75,6 +76,47 @@ final class NewCommand
         Console::cyan('║   Describe what you need, AI decides  ║');
         Console::cyan('╚══════════════════════════════════════╝');
         Console::line();
+    }
+
+    /**
+     * Show disclaimer notice on first run only.
+     * Persisted via a marker file in user's home directory.
+     */
+    private function showFirstRunNotice(): void
+    {
+        $home = getenv('HOME') ?: getenv('USERPROFILE') ?: '';
+
+        if ($home === '') {
+            return;
+        }
+
+        $markerDir = $home.DIRECTORY_SEPARATOR.'.tessera';
+        $markerFile = $markerDir.DIRECTORY_SEPARATOR.'.notice-accepted';
+
+        if (is_file($markerFile)) {
+            return;
+        }
+
+        Console::warn('Notice: Tessera uses your AI CLI tools (Claude, Gemini, Codex) to generate code.');
+        Console::warn('Each AI call consumes tokens from YOUR subscription plan — Tessera does not');
+        Console::warn('provide or pay for AI access. Generated code is AI-produced and should be');
+        Console::warn('reviewed before production use. Use at your own risk.');
+        Console::line();
+        Console::line('Full disclaimer: https://tessera-ai.net/docs/disclaimer');
+        Console::line();
+
+        if (! Console::confirm('I understand, continue')) {
+            exit(0);
+        }
+
+        Console::line();
+
+        // Save marker so we don't show again
+        if (! is_dir($markerDir)) {
+            @mkdir($markerDir, 0755, true);
+        }
+
+        @file_put_contents($markerFile, date('Y-m-d H:i:s'));
     }
 
     private function preflight(): bool
