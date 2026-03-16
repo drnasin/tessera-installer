@@ -1,5 +1,9 @@
 # Tessera Installer
 
+[![Tests](https://github.com/drnasin/tessera-installer/actions/workflows/tests.yml/badge.svg)](https://github.com/drnasin/tessera-installer/actions/workflows/tests.yml)
+[![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php&logoColor=white)](https://www.php.net/)
+[![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial-blue)](LICENSE.md)
+
 Website: [tessera-ai.net](https://tessera-ai.net)
 
 Create a new project with a single command. AI decides everything — you just describe what you need.
