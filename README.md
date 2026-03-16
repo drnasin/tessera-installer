@@ -1,5 +1,7 @@
 # Tessera Installer
 
+Website: [tessera-ai.net](https://tessera-ai.net)
+
 Create a new project with a single command. AI decides everything — you just describe what you need.
 
 > **Important:** Tessera uses your installed AI CLI tools (Claude, Gemini, Codex) to generate code. Each AI call consumes tokens from **your own subscription plan** — Tessera does not provide or pay for AI access. Generated code is produced by AI and may contain errors, security vulnerabilities, or incorrect implementations. Always review generated code before deploying to production. See [Disclaimer](#disclaimer) for full details.
