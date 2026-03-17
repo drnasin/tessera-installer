@@ -7,6 +7,8 @@ namespace Tessera\Installer\Tests\Integration;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Tessera\Installer\AiTool;
+use Tessera\Installer\Console;
+use Tessera\Installer\FakeConsoleInput;
 use Tessera\Installer\StepRunner;
 use Tessera\Installer\ToolRouter;
 
@@ -18,6 +20,21 @@ use Tessera\Installer\ToolRouter;
  */
 final class StepRunnerTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Prevent STDIN reads — default to "Skip this step" (index 1)
+        Console::setInput(new FakeConsoleInput([1]));
+    }
+
+    protected function tearDown(): void
+    {
+        Console::setInput(null);
+
+        parent::tearDown();
+    }
+
     private function makeRunner(int $maxRetries = 2): StepRunner
     {
         $router = ToolRouter::withSingleTool(AiTool::fake('claude'));
@@ -59,8 +76,11 @@ final class StepRunnerTest extends TestCase
     }
 
     #[Test]
-    public function run_fails_when_execute_returns_false(): void
+    public function run_skips_when_execute_fails_and_user_chooses_skip(): void
     {
+        // "Skip this step" = index 1 for skippable choice menu
+        Console::setInput(new FakeConsoleInput([1]));
+
         $runner = $this->makeRunner(maxRetries: 0);
 
         ob_start();
@@ -71,15 +91,15 @@ final class StepRunnerTest extends TestCase
         );
         ob_end_clean();
 
-        // With 0 retries and skippable, falls to user prompt.
-        // Since we can't interact with stdin in tests, check the log.
         $log = $runner->getLog();
         $this->assertArrayHasKey('Failing step', $log);
     }
 
     #[Test]
-    public function run_fails_when_verification_returns_error(): void
+    public function run_skips_when_verification_fails_and_user_chooses_skip(): void
     {
+        Console::setInput(new FakeConsoleInput([1]));
+
         $runner = $this->makeRunner(maxRetries: 0);
 
         ob_start();
@@ -98,6 +118,8 @@ final class StepRunnerTest extends TestCase
     #[Test]
     public function attempt_catches_exceptions(): void
     {
+        Console::setInput(new FakeConsoleInput([1]));
+
         $runner = $this->makeRunner(maxRetries: 0);
 
         ob_start();
@@ -135,6 +157,8 @@ final class StepRunnerTest extends TestCase
     #[Test]
     public function verify_catches_exceptions(): void
     {
+        Console::setInput(new FakeConsoleInput([1]));
+
         $runner = $this->makeRunner(maxRetries: 0);
 
         ob_start();

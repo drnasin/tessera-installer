@@ -6,9 +6,22 @@ namespace Tessera\Installer;
 
 /**
  * Minimal console I/O — no framework dependencies.
+ *
+ * Input methods (ask, confirm, choice) delegate to a swappable ConsoleInput
+ * provider, enabling test doubles without touching call sites.
  */
 final class Console
 {
+    private static ?ConsoleInput $input = null;
+
+    /**
+     * Swap the input provider (for testing).
+     */
+    public static function setInput(?ConsoleInput $input): void
+    {
+        self::$input = $input;
+    }
+
     public static function line(string $text = ''): void
     {
         echo $text.PHP_EOL;
@@ -59,6 +72,10 @@ final class Console
      */
     public static function ask(string $question, ?string $default = null): string
     {
+        if (self::$input !== null) {
+            return self::$input->ask($question, $default);
+        }
+
         $suffix = $default !== null ? " [{$default}]" : '';
         echo "\033[33m? \033[0m{$question}{$suffix}: ";
 
@@ -76,6 +93,10 @@ final class Console
      */
     public static function confirm(string $question, bool $default = true): bool
     {
+        if (self::$input !== null) {
+            return self::$input->confirm($question, $default);
+        }
+
         $suffix = $default ? ' [Y/n]' : ' [y/N]';
         echo "\033[33m? \033[0m{$question}{$suffix}: ";
 
@@ -95,6 +116,10 @@ final class Console
      */
     public static function choice(string $question, array $options, int $default = 0): int
     {
+        if (self::$input !== null) {
+            return self::$input->choice($question, $options, $default);
+        }
+
         echo PHP_EOL;
         self::line($question);
 
