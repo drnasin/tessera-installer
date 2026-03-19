@@ -13,7 +13,7 @@ final class UsageTrackerTest extends TestCase
     #[Test]
     public function initial_state_has_zero_calls(): void
     {
-        $tracker = new UsageTracker();
+        $tracker = new UsageTracker;
 
         $this->assertSame(0, $tracker->totalCalls());
         $this->assertSame([], $tracker->toArray());
@@ -22,7 +22,7 @@ final class UsageTrackerTest extends TestCase
     #[Test]
     public function record_increments_count(): void
     {
-        $tracker = new UsageTracker();
+        $tracker = new UsageTracker;
         $tracker->record('claude', 'claude-opus-4-20250514');
 
         $this->assertSame(1, $tracker->totalCalls());
@@ -31,7 +31,7 @@ final class UsageTrackerTest extends TestCase
     #[Test]
     public function record_multiple_tools_and_models(): void
     {
-        $tracker = new UsageTracker();
+        $tracker = new UsageTracker;
         $tracker->record('claude', 'claude-opus-4-20250514');
         $tracker->record('claude', 'claude-opus-4-20250514');
         $tracker->record('claude', 'claude-sonnet-4-20250514');
@@ -48,7 +48,7 @@ final class UsageTrackerTest extends TestCase
     #[Test]
     public function null_model_records_as_default(): void
     {
-        $tracker = new UsageTracker();
+        $tracker = new UsageTracker;
         $tracker->record('codex', null);
 
         $data = $tracker->toArray();
@@ -58,7 +58,7 @@ final class UsageTrackerTest extends TestCase
     #[Test]
     public function summary_formats_correctly(): void
     {
-        $tracker = new UsageTracker();
+        $tracker = new UsageTracker;
         $tracker->record('claude', 'claude-opus-4-20250514');
         $tracker->record('claude', 'claude-sonnet-4-20250514');
         $tracker->record('gemini', 'gemini-2.0-flash');
@@ -71,7 +71,7 @@ final class UsageTrackerTest extends TestCase
     #[Test]
     public function summary_shortens_model_names(): void
     {
-        $tracker = new UsageTracker();
+        $tracker = new UsageTracker;
         $tracker->record('claude', 'claude-opus-4-20250514');
         $tracker->record('gemini', 'gemini-2.0-flash');
 
@@ -84,7 +84,7 @@ final class UsageTrackerTest extends TestCase
     #[Test]
     public function summary_with_no_calls_returns_message(): void
     {
-        $tracker = new UsageTracker();
+        $tracker = new UsageTracker;
 
         $this->assertSame('No AI calls made.', $tracker->summary());
     }
@@ -92,7 +92,7 @@ final class UsageTrackerTest extends TestCase
     #[Test]
     public function to_array_returns_nested_structure(): void
     {
-        $tracker = new UsageTracker();
+        $tracker = new UsageTracker;
         $tracker->record('claude', 'model-a');
         $tracker->record('claude', 'model-b');
 

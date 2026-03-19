@@ -71,7 +71,7 @@ final class StackRegistry
 
         foreach (self::$stacks as $name => $stack) {
             $check = $stack->preflight();
-            $status = $check['ready'] ? 'READY' : 'MISSING: ' . implode(', ', $check['missing']);
+            $status = $check['ready'] ? 'READY' : 'MISSING: '.implode(', ', $check['missing']);
 
             $parts[] = "### {$stack->label()} ({$name})";
             $parts[] = "Status: {$status}";

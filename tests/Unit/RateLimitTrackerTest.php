@@ -13,7 +13,7 @@ final class RateLimitTrackerTest extends TestCase
     #[Test]
     public function new_tool_is_available(): void
     {
-        $tracker = new RateLimitTracker();
+        $tracker = new RateLimitTracker;
 
         $this->assertTrue($tracker->isAvailable('claude'));
     }
@@ -21,7 +21,7 @@ final class RateLimitTrackerTest extends TestCase
     #[Test]
     public function rate_limited_tool_is_unavailable(): void
     {
-        $tracker = new RateLimitTracker();
+        $tracker = new RateLimitTracker;
         $tracker->markRateLimited('claude');
 
         $this->assertFalse($tracker->isAvailable('claude'));
@@ -56,7 +56,7 @@ final class RateLimitTrackerTest extends TestCase
     #[Test]
     public function cooldown_remaining_for_never_limited_tool_is_zero(): void
     {
-        $tracker = new RateLimitTracker();
+        $tracker = new RateLimitTracker;
 
         $this->assertSame(0, $tracker->cooldownRemaining('claude'));
     }
@@ -75,7 +75,7 @@ final class RateLimitTrackerTest extends TestCase
     #[Test]
     public function mark_dead_is_idempotent(): void
     {
-        $tracker = new RateLimitTracker();
+        $tracker = new RateLimitTracker;
         $tracker->markDead('claude');
         $tracker->markDead('claude');
 
@@ -85,7 +85,7 @@ final class RateLimitTrackerTest extends TestCase
     #[Test]
     public function has_any_available_with_mixed_state(): void
     {
-        $tracker = new RateLimitTracker();
+        $tracker = new RateLimitTracker;
         $tracker->markDead('claude');
 
         $this->assertTrue($tracker->hasAnyAvailable(['claude', 'gemini']));
@@ -94,7 +94,7 @@ final class RateLimitTrackerTest extends TestCase
     #[Test]
     public function has_any_available_returns_false_when_all_unavailable(): void
     {
-        $tracker = new RateLimitTracker();
+        $tracker = new RateLimitTracker;
         $tracker->markDead('claude');
         $tracker->markDead('gemini');
 
@@ -104,7 +104,7 @@ final class RateLimitTrackerTest extends TestCase
     #[Test]
     public function other_tools_unaffected_by_rate_limit(): void
     {
-        $tracker = new RateLimitTracker();
+        $tracker = new RateLimitTracker;
         $tracker->markRateLimited('claude');
 
         $this->assertFalse($tracker->isAvailable('claude'));

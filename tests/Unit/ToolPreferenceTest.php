@@ -13,7 +13,7 @@ final class ToolPreferenceTest extends TestCase
     #[Test]
     public function default_order_is_claude_gemini_codex(): void
     {
-        $pref = new ToolPreference();
+        $pref = new ToolPreference;
 
         $this->assertSame(
             ['claude', 'gemini', 'codex'],
@@ -84,7 +84,7 @@ final class ToolPreferenceTest extends TestCase
     #[Test]
     public function tier_for_tool_without_plan_defaults_to_limited(): void
     {
-        $pref = new ToolPreference();
+        $pref = new ToolPreference;
 
         $this->assertSame('limited', $pref->tierFor('claude'));
     }
@@ -170,7 +170,7 @@ final class ToolPreferenceTest extends TestCase
     #[Test]
     public function describe_returns_default_when_no_customization(): void
     {
-        $pref = new ToolPreference();
+        $pref = new ToolPreference;
 
         $this->assertSame('default', $pref->describe());
     }
