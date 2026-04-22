@@ -639,11 +639,6 @@ Check for these specific issues and list ONLY actual problems you find:
 - Footer links hardcoded instead of coming from Navigation model
 - Form inputs invisible (white inputs on white background)
 - Missing mobile responsiveness (no responsive classes)
-
-Format each issue as:
-- CRITICAL/MEDIUM/LOW: description of the issue and which file
-
-If everything looks good, respond with: "No issues found."
 REVIEW,
                 fixPrompt: <<<'FIX'
 A peer reviewer found issues in the frontend theme. Fix ALL of them.
@@ -710,11 +705,6 @@ Check for these specific issues:
   (read resources/views/themes/default/blocks/*.blade.php and compare)
 - Wrong Filament class imports (verify each use statement resolves to a real class)
 - Missing relationships referenced in resource (verify they exist on the model)
-
-Format each issue as:
-- CRITICAL/MEDIUM/LOW: file — description
-
-If everything matches correctly, respond with: "No issues found."
 REVIEW,
                 fixPrompt: <<<'FIX'
 A peer reviewer found issues in the Filament admin resources. Fix ALL of them.

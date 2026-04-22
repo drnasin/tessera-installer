@@ -304,6 +304,18 @@ final class Memory
         return is_array($decoded) ? $decoded : [];
     }
 
+    /**
+     * Atomic write with cross-process lock.
+     *
+     *   - Unique tmp filename (pid + random) so parallel writers don't
+     *     stomp on each other's staging file.
+     *   - flock() on a sibling lockfile serialises concurrent writers.
+     *   - On POSIX, rename() overwrites atomically. On Windows, rename()
+     *     fails if the target exists, so we unlink-then-rename under the
+     *     lock. A crash between unlink and rename leaves no state.json
+     *     (load() treats missing file as empty state), which is recoverable,
+     *     versus a corrupted JSON which is not.
+     */
     private function save(): void
     {
         if (! is_dir($this->stateDir) && ! mkdir($this->stateDir, 0755, true) && ! is_dir($this->stateDir)) {
@@ -316,12 +328,59 @@ final class Memory
             return;
         }
 
-        // Atomic write: write to temp file, then rename.
-        // Prevents corrupted state.json if the process crashes mid-write.
-        $tmpFile = $this->stateFile.'.tmp';
+        $lockPath = $this->stateFile.'.lock';
+        $lockHandle = @fopen($lockPath, 'c');
+        if ($lockHandle === false) {
+            // Can't create the lockfile — fall back to best-effort write.
+            $this->writeWithoutLock($json);
 
-        if (file_put_contents($tmpFile, $json) !== false) {
-            rename($tmpFile, $this->stateFile);
+            return;
         }
+
+        try {
+            if (! flock($lockHandle, LOCK_EX)) {
+                // Couldn't acquire the lock — still attempt the write rather
+                // than losing state, but without serialisation guarantees.
+                $this->writeWithoutLock($json);
+
+                return;
+            }
+
+            $this->writeAtomic($json);
+
+            flock($lockHandle, LOCK_UN);
+        } finally {
+            fclose($lockHandle);
+        }
+    }
+
+    private function writeAtomic(string $json): void
+    {
+        $tmpFile = $this->stateFile.'.'.getmypid().'.'.bin2hex(random_bytes(4)).'.tmp';
+
+        if (file_put_contents($tmpFile, $json) === false) {
+            return;
+        }
+
+        if (PHP_OS_FAMILY === 'Windows' && is_file($this->stateFile)) {
+            // Windows rename() refuses to overwrite; remove first under the lock.
+            // The worst-case crash window (state.json missing) is strictly better
+            // than a corrupted state.json that load() cannot parse.
+            @unlink($this->stateFile);
+        }
+
+        if (! @rename($tmpFile, $this->stateFile)) {
+            // rename failed — fall back to copy+unlink so we at least persist.
+            if (@copy($tmpFile, $this->stateFile)) {
+                @unlink($tmpFile);
+            }
+        }
+    }
+
+    private function writeWithoutLock(string $json): void
+    {
+        // Degenerate path — no lockfile possible. Still use unique tmp so
+        // two simultaneous writers don't fight over the same staging file.
+        $this->writeAtomic($json);
     }
 }

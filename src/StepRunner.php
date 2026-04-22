@@ -308,7 +308,8 @@ final class StepRunner
         Console::line("  Reviewer: {$toolName} ({$modelDisplay})");
 
         $this->router->usage()->record($toolName, $reviewer->model);
-        $response = $reviewer->tool->execute($reviewPrompt, $this->workingDir, $timeout, $reviewer->model);
+        $enrichedPrompt = $reviewPrompt."\n\n".self::REVIEW_OUTPUT_FORMAT;
+        $response = $reviewer->tool->execute($enrichedPrompt, $this->workingDir, $timeout, $reviewer->model);
 
         if (! $response->success) {
             Console::warn('  Review failed — skipping');
@@ -347,32 +348,80 @@ final class StepRunner
     }
 
     /**
-     * Check if the review output indicates no issues.
+     * Sentinel appended to every review prompt so the reviewer's output has a
+     * machine-readable status line. The previous heuristic ("does the output
+     * contain 'no critical' or 'lgtm' or 'looks good'?") gave false negatives
+     * on outputs like "There are no critical issues but I found 3 medium bugs".
+     */
+    private const REVIEW_OUTPUT_FORMAT = <<<'FORMAT'
+OUTPUT FORMAT — FOLLOW EXACTLY:
+
+If you found NO issues:
+Respond with a single line, nothing else:
+STATUS: NO_ISSUES_FOUND
+
+If you found ONE OR MORE issues:
+Start the first line with exactly:
+STATUS: ISSUES_FOUND
+
+Then list one issue per line, each starting with severity (CRITICAL:, HIGH:, MEDIUM:, LOW:)
+followed by the file and a short description.
+
+Example:
+STATUS: ISSUES_FOUND
+CRITICAL: app/Models/Page.php — slug column is not nullable but Factory generates null
+MEDIUM: resources/views/header.blade.php — mobile menu has no close button
+
+The STATUS line is mandatory. Do not prefix it with markdown, quotes, or code fences.
+FORMAT;
+
+    /**
+     * Strict match on the NO_ISSUES_FOUND sentinel. Anything else — including
+     * missing status line, ISSUES_FOUND, or free-form text — is treated as
+     * "issues present" so the fix step runs. Better to waste a fix call on a
+     * clean review than to silently skip real issues.
      */
     private function reviewFoundNoIssues(string $output): bool
     {
-        $lower = strtolower($output);
+        foreach (self::firstNonEmptyLines($output, 3) as $line) {
+            $upper = strtoupper(trim($line));
 
-        $noIssuePatterns = [
-            'no issues',
-            'no problems',
-            'looks good',
-            'all good',
-            'no errors',
-            'everything is correct',
-            'no changes needed',
-            'lgtm',
-            '0 issues',
-            'no critical',
-        ];
-
-        foreach ($noIssuePatterns as $pattern) {
-            if (str_contains($lower, $pattern)) {
+            if ($upper === 'STATUS: NO_ISSUES_FOUND' || $upper === 'STATUS:NO_ISSUES_FOUND') {
                 return true;
+            }
+
+            // If we see an ISSUES_FOUND status first, stop — there are issues.
+            if (str_starts_with($upper, 'STATUS: ISSUES_FOUND') || str_starts_with($upper, 'STATUS:ISSUES_FOUND')) {
+                return false;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Return up to $max non-empty lines from the start of $text, trimmed.
+     *
+     * @return array<int, string>
+     */
+    private static function firstNonEmptyLines(string $text, int $max): array
+    {
+        $result = [];
+
+        foreach (explode("\n", $text) as $line) {
+            $trimmed = trim($line);
+            if ($trimmed === '') {
+                continue;
+            }
+
+            $result[] = $trimmed;
+
+            if (count($result) >= $max) {
+                break;
+            }
+        }
+
+        return $result;
     }
 
     /**

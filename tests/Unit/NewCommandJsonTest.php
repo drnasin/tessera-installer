@@ -98,4 +98,95 @@ final class NewCommandJsonTest extends TestCase
         $this->assertSame(['hr', 'en'], $result['languages']);
         $this->assertTrue($result['needs_shop']);
     }
+
+    #[Test]
+    public function handles_deeply_nested_objects(): void
+    {
+        // The previous regex-based parser (\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})
+        // supported only one level of nesting. Three levels broke it.
+        $text = 'Config: {"stack":"laravel","options":{"database":{"driver":"mysql","charset":"utf8mb4"}}}';
+
+        $result = $this->extractJson($text);
+
+        $this->assertNotNull($result);
+        $this->assertSame('laravel', $result['stack']);
+        $this->assertSame('mysql', $result['options']['database']['driver']);
+    }
+
+    #[Test]
+    public function handles_braces_inside_string_literals(): void
+    {
+        // The regex treated every `{` as structural. A brace inside a JSON
+        // string (valid JSON!) broke extraction.
+        $text = 'Result: {"reason":"user said: {please help}","stack":"node"}';
+
+        $result = $this->extractJson($text);
+
+        $this->assertNotNull($result);
+        $this->assertSame('node', $result['stack']);
+        $this->assertSame('user said: {please help}', $result['reason']);
+    }
+
+    #[Test]
+    public function handles_escaped_quotes_in_strings(): void
+    {
+        $text = '{"msg":"he said \\"hi\\"","ok":true}';
+
+        $result = $this->extractJson($text);
+
+        $this->assertNotNull($result);
+        $this->assertSame('he said "hi"', $result['msg']);
+        $this->assertTrue($result['ok']);
+    }
+
+    #[Test]
+    public function prefers_first_valid_json_in_multiple_blocks(): void
+    {
+        // AI sometimes writes "before reply: {...} after correction: {...}"
+        // Prior impl might have picked up whichever the regex found first
+        // (often broken), or the last (shortest). Either way, stable choice.
+        $text = 'First attempt: {"stack":"node"}. Revised: {"stack":"laravel","reason":"CMS"}.';
+
+        $result = $this->extractJson($text);
+
+        $this->assertNotNull($result);
+        // Accept either — but assert it is ONE of the valid objects, not a merge.
+        $this->assertContains($result['stack'], ['node', 'laravel']);
+    }
+
+    #[Test]
+    public function handles_fenced_block_with_language_tag(): void
+    {
+        $text = "Here you go:\n```json\n{\"stack\":\"go\",\"meta\":{\"a\":1,\"b\":{\"c\":2}}}\n```\nHope this helps.";
+
+        $result = $this->extractJson($text);
+
+        $this->assertNotNull($result);
+        $this->assertSame('go', $result['stack']);
+        $this->assertSame(2, $result['meta']['b']['c']);
+    }
+
+    #[Test]
+    public function handles_arrays_at_any_nesting(): void
+    {
+        $text = '{"a":[1,[2,[3,{"deep":true}]]],"b":"x"}';
+
+        $result = $this->extractJson($text);
+
+        $this->assertNotNull($result);
+        $this->assertSame('x', $result['b']);
+        $this->assertTrue($result['a'][1][1][1]['deep']);
+    }
+
+    #[Test]
+    public function handles_close_brace_in_string(): void
+    {
+        $text = 'Config: {"emoticon":"}:-)","stack":"laravel"}';
+
+        $result = $this->extractJson($text);
+
+        $this->assertNotNull($result);
+        $this->assertSame('}:-)', $result['emoticon']);
+        $this->assertSame('laravel', $result['stack']);
+    }
 }

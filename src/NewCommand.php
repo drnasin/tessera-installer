@@ -842,21 +842,105 @@ PROMPT;
     /**
      * Extract JSON from AI output that may contain surrounding text.
      *
+     * Strategy, in order:
+     *   1. Try to parse the whole string as JSON.
+     *   2. Look for a fenced ``` ```json ``` block and parse its contents.
+     *   3. Scan the text for the first balanced `{...}` block, honoring
+     *      string literals and escape sequences so braces inside quoted
+     *      values don't fool the scanner.
+     *
+     * The legacy regex-based approach supported only one level of nesting
+     * and was tripped up by `}` or `{` inside string values.
+     *
      * @return array<string, mixed>|null
      */
     private function extractJson(string $text): ?array
     {
-        // Try direct parse first
+        // 1) Whole-string parse.
         $decoded = json_decode($text, true);
         if (is_array($decoded)) {
             return $decoded;
         }
 
-        // Try to find JSON within the text
-        if (preg_match('/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/s', $text, $matches)) {
-            $decoded = json_decode($matches[0], true);
+        // 2) Fenced markdown block ``` or ```json.
+        if (preg_match('/```(?:json)?\s*(\{.*?\})\s*```/s', $text, $matches) === 1) {
+            $decoded = json_decode($matches[1], true);
             if (is_array($decoded)) {
                 return $decoded;
+            }
+        }
+
+        // 3) Scan for the first balanced `{...}`, trying each possible start
+        //    position until we find one that yields valid JSON. This handles
+        //    the case where the first `{` starts garbage but a later one
+        //    starts the real payload.
+        $len = strlen($text);
+        for ($start = 0; $start < $len; $start++) {
+            if ($text[$start] !== '{') {
+                continue;
+            }
+
+            $end = self::findMatchingBrace($text, $start);
+            if ($end === null) {
+                continue;
+            }
+
+            $candidate = substr($text, $start, $end - $start + 1);
+            $decoded = json_decode($candidate, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Given a string and the offset of a `{`, return the offset of the
+     * matching `}`, honoring JSON string literals (braces inside `"..."`
+     * don't count) and backslash escapes inside those strings. Returns null
+     * if no matching close brace exists.
+     */
+    private static function findMatchingBrace(string $text, int $openOffset): ?int
+    {
+        $len = strlen($text);
+        $depth = 0;
+        $inString = false;
+        $escaped = false;
+
+        for ($i = $openOffset; $i < $len; $i++) {
+            $char = $text[$i];
+
+            if ($inString) {
+                if ($escaped) {
+                    $escaped = false;
+                    continue;
+                }
+                if ($char === '\\') {
+                    $escaped = true;
+                    continue;
+                }
+                if ($char === '"') {
+                    $inString = false;
+                }
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = true;
+                continue;
+            }
+
+            if ($char === '{') {
+                $depth++;
+                continue;
+            }
+
+            if ($char === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return $i;
+                }
             }
         }
 
