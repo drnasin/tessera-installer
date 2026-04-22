@@ -16,6 +16,12 @@ class AiTool
      * deliberate choice over a class const; the marginal cost of rebuilding a small array
      * on each detect*() call is negligible compared to the flexibility it provides.
      *
+     * TESSERA_SAFE_AI today affects ONLY Claude. Codex and Gemini have their own
+     * permission models (codex exec's sandbox, Gemini's default approval flow)
+     * which Tessera does not currently configure. Extending SAFE_AI coverage to
+     * those CLIs is a planned improvement — see the AI Permission Mode section
+     * of README.md.
+     *
      * @return array<string, array{binary: string, detect: string, execute: array<int, string>, stdin: bool}>
      */
     private static function tools(): array
@@ -24,7 +30,7 @@ class AiTool
         // The installer runs AI non-interactively as a subprocess, so the
         // default must be --dangerously-skip-permissions or AI hangs on first
         // file write. Power users can set TESSERA_SAFE_AI=1 to opt out; the
-        // installer will then fail loudly if AI tries to do anything that
+        // installer will then fail loudly if Claude tries to do anything that
         // needs approval, which is the correct behaviour for that mode.
         $safeAi = getenv('TESSERA_SAFE_AI');
         $claudeArgs = ['claude', '-p', '--output-format', 'text', '--verbose'];

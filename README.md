@@ -344,16 +344,23 @@ Every subprocess Tessera spawns runs through a small hardened layer:
 - **Database credentials.** When configuring MySQL / MariaDB / PostgreSQL, the password is passed via the engine's designated env var (`PGPASSWORD`, `MYSQL_PWD`) — never as an `argv` flag visible in `ps`. Database and user names are validated against a strict allowlist before being embedded in DDL. `.env` writes quote and escape any value containing whitespace, `#`, `$`, quote, backslash, or newline.
 - **Directory guard.** `tessera new --force` can only delete inside the current working directory and never follows symlinks (they are unlinked as links). A crafted `.tessera/state.json` cannot point deletion at unrelated paths.
 
-### `TESSERA_SAFE_AI` — AI Permission Mode
-By default Tessera launches Claude with `--dangerously-skip-permissions` so the installer can scaffold without a confirmation prompt on every file write. That grants AI full filesystem and shell access for the duration of the build, which is what non-interactive scaffolding requires.
+### `TESSERA_SAFE_AI` — AI Permission Mode (Claude only)
+By default Tessera launches Claude with `--dangerously-skip-permissions` so the installer can scaffold without a confirmation prompt on every file write. That grants Claude full filesystem and shell access for the duration of the build, which is what non-interactive scaffolding requires.
 
-If you prefer to approve each AI action manually (e.g., on sensitive machines, or during an audit), set `TESSERA_SAFE_AI=1`:
+If you prefer to approve each Claude action manually (e.g., on sensitive machines, or during an audit), set `TESSERA_SAFE_AI=1`:
 
 ```bash
 TESSERA_SAFE_AI=1 tessera new my-project
 ```
 
-Claude will then pause on each action and wait for your approval. The installer will fail loudly rather than silently hang if AI tries to do something that needs permission — which is the correct behaviour for that mode.
+Claude will then pause on each action and wait for your approval. The installer will fail loudly rather than silently hang if Claude tries to do something that needs permission — which is the correct behaviour for that mode.
+
+**What about Codex and Gemini?** `TESSERA_SAFE_AI` affects only Claude today, because Claude is the only AI CLI Tessera launches with a permission-bypass flag. The others have different permission models that Tessera does not currently configure:
+
+- **Codex** runs via `codex exec`, which has its own sandbox model (approval-on-request by default). Tessera passes only `--skip-git-repo-check`; it does not set Codex's `--dangerously-bypass-approvals-and-sandbox`. Whether Codex prompts during a run depends on your Codex version and its own defaults.
+- **Gemini** is invoked without any flag. Its approval behaviour is whatever the Gemini CLI's default is on your system.
+
+So if your build primarily uses Codex or Gemini, setting `TESSERA_SAFE_AI=1` will have no effect on those tools. Per-action approval for those CLIs is on their respective roadmaps here and may land in a future release.
 
 ### Error Visibility
 When a build step fails and falls back to another tool, the actual error message is shown in the console — not just "step failed". This makes debugging easier when all fallbacks are exhausted.
