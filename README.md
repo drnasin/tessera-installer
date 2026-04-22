@@ -245,6 +245,8 @@ TESSERA_CODEX_PLAN=plus       # plus | free
 TESSERA_GEMINI_PLAN=free      # pro | free
 TESSERA_TOOL_PREFERENCE=gemini,claude,codex  # custom tool order
 TESSERA_TOOL_EXCLUDE=codex    # never use this tool
+TESSERA_SAFE_AI=1             # opt out of --dangerously-skip-permissions (see Security Model)
+TESSERA_AI_TIMEOUT=900        # seconds per AI step (default 900)
 ```
 
 ```
@@ -292,7 +294,7 @@ After building the project, AI generates tests and runs them. If any test fails,
 The generated catch-all route `/{slug?}` renders the homepage directly at `/` — no redirect to `/home` or `/pocetna`. The homepage slug comes from the database, so the admin can change it without touching code.
 
 ### Project Memory & Resume
-AI maintains state in `.tessera/state.json` — tracking completed steps, decisions, and notes. State writes are **atomic** (write to temp file, then rename) to prevent corruption on crash or Ctrl+C.
+AI maintains state in `.tessera/state.json` — tracking completed steps, decisions, and notes. State writes are **atomic and locked**: each write goes to a unique temp file, a `state.json.lock` serialises concurrent writers via `flock()`, and the temp file is renamed into place under the lock. On Windows (where `rename()` refuses to overwrite) the target is removed first under the same lock. Crashes between steps never leave partially-written JSON.
 
 If a build fails, times out, or you cancel, progress is saved. Run the same command again and AI offers to **resume from where it stopped** — no need to re-describe the project or re-select the stack. On resume, the saved stack is used directly (AI stack selection is skipped).
 
@@ -330,8 +332,28 @@ If something goes wrong:
 - **Can't create database** — installer waits for you to create it manually, then verifies
 - **Can't connect at all** — falls back to SQLite so the installation can continue
 
-### Console Environment Sanitization
-When spawning AI tool processes, the installer cleans environment variables (like `CLAUDECODE`) to prevent nesting protection from blocking execution — the same technique used by the Tessera AI Engine.
+### Security Model
+Every subprocess Tessera spawns runs through a small hardened layer:
+
+- **Shell-free execution.** All subprocesses are launched with array `argv` via the internal `CommandRunner`, so user or AI input cannot inject shell metacharacters (`;`, backticks, `$(...)`, etc.). There is no shell interpreting the command line.
+- **Environment allowlist.** An `EnvPolicy` filters the parent process's env before it reaches the child. Three policies exist:
+  - **Minimal** — `PATH`, `HOME`/`USERPROFILE`, locale. Used for `--version` probes.
+  - **Build tool** — minimal + `COMPOSER_*`, `NPM_*`, `GIT_*`, `SSH_*`, Tessera's own `TESSERA_*` vars. Used for `composer`, `npm`, `git`, `php artisan`, DB clients. Notably excludes AI credentials.
+  - **AI tool** — build-tool + the credentials of that AI only. `ANTHROPIC_API_KEY` reaches Claude; not OpenAI Codex, not Gemini, not composer.
+  AI-nesting markers (`CLAUDECODE`, `CLAUDE_CODE_*`) are always stripped so child AI processes don't detect a parent AI session and refuse to run.
+- **Database credentials.** When configuring MySQL / MariaDB / PostgreSQL, the password is passed via the engine's designated env var (`PGPASSWORD`, `MYSQL_PWD`) — never as an `argv` flag visible in `ps`. Database and user names are validated against a strict allowlist before being embedded in DDL. `.env` writes quote and escape any value containing whitespace, `#`, `$`, quote, backslash, or newline.
+- **Directory guard.** `tessera new --force` can only delete inside the current working directory and never follows symlinks (they are unlinked as links). A crafted `.tessera/state.json` cannot point deletion at unrelated paths.
+
+### `TESSERA_SAFE_AI` — AI Permission Mode
+By default Tessera launches Claude with `--dangerously-skip-permissions` so the installer can scaffold without a confirmation prompt on every file write. That grants AI full filesystem and shell access for the duration of the build, which is what non-interactive scaffolding requires.
+
+If you prefer to approve each AI action manually (e.g., on sensitive machines, or during an audit), set `TESSERA_SAFE_AI=1`:
+
+```bash
+TESSERA_SAFE_AI=1 tessera new my-project
+```
+
+Claude will then pause on each action and wait for your approval. The installer will fail loudly rather than silently hang if AI tries to do something that needs permission — which is the correct behaviour for that mode.
 
 ### Error Visibility
 When a build step fails and falls back to another tool, the actual error message is shown in the console — not just "step failed". This makes debugging easier when all fallbacks are exhausted.
