@@ -102,6 +102,9 @@ final class NewCommand
         Console::warn('provide or pay for AI access. Generated code is AI-produced and should be');
         Console::warn('reviewed before production use. Use at your own risk.');
         Console::line();
+        Console::warn('Security: AI runs with full filesystem/shell access by default (required for');
+        Console::warn('non-interactive scaffolding). Set TESSERA_SAFE_AI=1 for per-action approval.');
+        Console::line();
         Console::line('Full disclaimer: https://tessera-ai.net/docs/disclaimer');
         Console::line();
 
@@ -862,10 +865,37 @@ PROMPT;
 
     /**
      * Recursively remove a directory.
+     *
+     * Defense-in-depth: refuses to delete anything outside the current working
+     * directory, and refuses to follow symlinks (they are unlinked as links, not
+     * descended into). Protects against a malicious state.json that could point
+     * removeDirectory at an unrelated path under `--force`.
      */
     private static function removeDirectory(string $path): void
     {
         if (! is_dir($path)) {
+            return;
+        }
+
+        $real = realpath($path);
+        $cwd = realpath(getcwd() ?: '.');
+
+        if ($real === false || $cwd === false) {
+            throw new \RuntimeException("Refusing to remove '{$path}': cannot resolve realpath.");
+        }
+
+        // Normalise separators so the check works identically on Windows and POSIX.
+        $realN = str_replace('\\', '/', $real);
+        $cwdN = str_replace('\\', '/', $cwd);
+
+        if ($realN !== $cwdN && ! str_starts_with($realN.'/', $cwdN.'/')) {
+            throw new \RuntimeException("Refusing to remove '{$path}': outside current working directory ({$cwd}).");
+        }
+
+        if (is_link($path)) {
+            // Don't descend into symlinks — unlink the link itself.
+            unlink($path);
+
             return;
         }
 
@@ -875,10 +905,19 @@ PROMPT;
         );
 
         foreach ($items as $item) {
+            $pathname = $item->getPathname();
+
+            if ($item->isLink()) {
+                // Symlinks (to files or dirs) are unlinked as links — never followed.
+                @unlink($pathname);
+
+                continue;
+            }
+
             if ($item->isDir()) {
-                rmdir($item->getPathname());
+                rmdir($pathname);
             } else {
-                unlink($item->getPathname());
+                unlink($pathname);
             }
         }
 

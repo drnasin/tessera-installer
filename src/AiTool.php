@@ -9,26 +9,50 @@ namespace Tessera\Installer;
  */
 class AiTool
 {
-    private const TOOLS = [
-        'claude' => [
-            'binary' => 'claude',
-            'detect' => 'claude --version',
-            'execute' => ['claude', '-p', '--dangerously-skip-permissions', '--output-format', 'text', '--verbose'],
-            'stdin' => true,
-        ],
-        'gemini' => [
-            'binary' => 'gemini',
-            'detect' => 'gemini --version',
-            'execute' => ['gemini'],
-            'stdin' => false,
-        ],
-        'codex' => [
-            'binary' => 'codex',
-            'detect' => 'codex --version',
-            'execute' => ['codex', 'exec', '--skip-git-repo-check'],
-            'stdin' => false,
-        ],
-    ];
+    /**
+     * Tool configuration is built per-call (not a class const) so runtime env flags
+     * — notably TESSERA_SAFE_AI=1 which strips Claude's --dangerously-skip-permissions —
+     * take effect even if the caller sets them via putenv() mid-process. This is a
+     * deliberate choice over a class const; the marginal cost of rebuilding a small array
+     * on each detect*() call is negligible compared to the flexibility it provides.
+     *
+     * @return array<string, array{binary: string, detect: string, execute: array<int, string>, stdin: bool}>
+     */
+    private static function tools(): array
+    {
+        // Claude Code normally asks the user to approve each tool call.
+        // The installer runs AI non-interactively as a subprocess, so the
+        // default must be --dangerously-skip-permissions or AI hangs on first
+        // file write. Power users can set TESSERA_SAFE_AI=1 to opt out; the
+        // installer will then fail loudly if AI tries to do anything that
+        // needs approval, which is the correct behaviour for that mode.
+        $safeAi = getenv('TESSERA_SAFE_AI');
+        $claudeArgs = ['claude', '-p', '--output-format', 'text', '--verbose'];
+        if ($safeAi === false || $safeAi === '' || $safeAi === '0') {
+            array_splice($claudeArgs, 2, 0, ['--dangerously-skip-permissions']);
+        }
+
+        return [
+            'claude' => [
+                'binary' => 'claude',
+                'detect' => 'claude --version',
+                'execute' => $claudeArgs,
+                'stdin' => true,
+            ],
+            'gemini' => [
+                'binary' => 'gemini',
+                'detect' => 'gemini --version',
+                'execute' => ['gemini'],
+                'stdin' => false,
+            ],
+            'codex' => [
+                'binary' => 'codex',
+                'detect' => 'codex --version',
+                'execute' => ['codex', 'exec', '--skip-git-repo-check'],
+                'stdin' => false,
+            ],
+        ];
+    }
 
     private string $name;
 
@@ -51,7 +75,8 @@ class AiTool
      */
     public static function fake(string $name, ?string $version = 'fake-1.0'): static
     {
-        $config = self::TOOLS[$name] ?? self::TOOLS['claude'];
+        $tools = self::tools();
+        $config = $tools[$name] ?? $tools['claude'];
 
         return new static($name, $config, $version);
     }
@@ -61,7 +86,7 @@ class AiTool
      */
     public static function detect(): ?self
     {
-        foreach (self::TOOLS as $name => $config) {
+        foreach (self::tools() as $name => $config) {
             $version = self::checkAvailable($config['detect']);
 
             if ($version !== null) {
@@ -81,7 +106,7 @@ class AiTool
     {
         $available = [];
 
-        foreach (self::TOOLS as $name => $config) {
+        foreach (self::tools() as $name => $config) {
             $version = self::checkAvailable($config['detect']);
 
             if ($version !== null) {
@@ -101,7 +126,7 @@ class AiTool
     {
         $available = [];
 
-        foreach (self::TOOLS as $name => $config) {
+        foreach (self::tools() as $name => $config) {
             $version = self::checkAvailable($config['detect']);
 
             if ($version !== null) {

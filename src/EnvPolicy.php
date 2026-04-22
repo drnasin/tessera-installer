@@ -1,0 +1,244 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tessera\Installer;
+
+/**
+ * Explicit environment-variable policy for subprocess execution.
+ *
+ * The installer spawns three categories of subprocesses:
+ *
+ *   1. AI CLI tools (claude / gemini / codex) — these need the user's API
+ *      credentials for the respective provider, plus PATH and locale.
+ *   2. Build tools (composer, npm, php artisan, git, psql, mysql) — these need
+ *      PATH and the project directory, but should NOT inherit cross-provider
+ *      API keys.
+ *   3. Detection probes (tool --version) — need only PATH.
+ *
+ * Without this policy, every subprocess inherited the full parent env,
+ * leaking OPENAI_API_KEY to the composer process, GITHUB_TOKEN to the MySQL
+ * CLI, CI tokens to AI tools, etc. Subprocesses should only see what they need.
+ */
+final class EnvPolicy
+{
+    /**
+     * Variables every subprocess needs to function at all.
+     * PATH and OS-locator vars, plus locale.
+     */
+    private const BASE_ALLOWLIST = [
+        'PATH',
+        'HOME',
+        'USERPROFILE',
+        'SYSTEMROOT',
+        'WINDIR',
+        'TEMP',
+        'TMP',
+        'TMPDIR',
+        'LANG',
+        'LC_ALL',
+        'LC_CTYPE',
+        'COMSPEC',
+        'PATHEXT',
+        'APPDATA',
+        'LOCALAPPDATA',
+        'PROGRAMDATA',
+        'PROGRAMFILES',
+        'PROGRAMFILES(X86)',
+        'PROGRAMW6432',
+        'SHELL',
+        'TERM',
+        'USER',
+        'USERNAME',
+        'LOGNAME',
+        'PWD',
+    ];
+
+    /**
+     * AI-specific credentials. Only the matching AI tool should see these.
+     * Keyed by AiTool::name().
+     *
+     * @var array<string, array<int, string>>
+     */
+    private const AI_CREDENTIALS = [
+        'claude' => [
+            'ANTHROPIC_API_KEY',
+            'ANTHROPIC_AUTH_TOKEN',
+            'CLAUDE_CONFIG_DIR',
+        ],
+        'gemini' => [
+            'GOOGLE_API_KEY',
+            'GEMINI_API_KEY',
+            'GOOGLE_APPLICATION_CREDENTIALS',
+        ],
+        'codex' => [
+            'OPENAI_API_KEY',
+            'OPENAI_ORG_ID',
+            'OPENAI_PROJECT',
+        ],
+    ];
+
+    /**
+     * Variables Tessera reads from — these should pass through to subprocesses
+     * that might need them (e.g., composer reads COMPOSER_HOME, npm reads
+     * npm_config_*, etc.).
+     */
+    private const TOOL_PASSTHROUGH = [
+        'COMPOSER_HOME',
+        'COMPOSER_AUTH',
+        'COMPOSER_CACHE_DIR',
+        'COMPOSER_NO_INTERACTION',
+        'COMPOSER_MEMORY_LIMIT',
+        'NPM_CONFIG_REGISTRY',
+        'NPM_CONFIG_CACHE',
+        'NODE_OPTIONS',
+        'GIT_SSH',
+        'GIT_SSH_COMMAND',
+        'SSH_AUTH_SOCK',
+        'SSH_AGENT_PID',
+        'PHP_INI_SCAN_DIR',
+        'PHPRC',
+        'XDG_CONFIG_HOME',
+        'XDG_DATA_HOME',
+        'XDG_CACHE_HOME',
+        // Respect user's Tessera configuration.
+        'TESSERA_SAFE_AI',
+        'TESSERA_AI_TIMEOUT',
+        'TESSERA_TOOL_PREFERENCE',
+        'TESSERA_TOOL_EXCLUDE',
+        'TESSERA_CLAUDE_PLAN',
+        'TESSERA_CODEX_PLAN',
+        'TESSERA_GEMINI_PLAN',
+    ];
+
+    /**
+     * AI-nesting markers that MUST be stripped so spawned Claude/Codex don't
+     * refuse to run inside a parent Claude/Codex session.
+     */
+    private const NESTING_MARKERS = [
+        'CLAUDECODE',
+        'CLAUDE_CODE',
+        'CLAUDE_CODE_SSE_PORT',
+        'CLAUDE_CODE_ENTRYPOINT',
+        'CLAUDECODE_ENTRYPOINT',
+        'VIPSHOME',
+    ];
+
+    /** @var array<string> */
+    private array $allowlist;
+
+    /** @var array<string, string> Explicit extras merged into the filtered env. */
+    private array $extras = [];
+
+    /**
+     * @param array<string> $allowlist  Exact env var names this policy will pass through.
+     */
+    private function __construct(array $allowlist)
+    {
+        // De-duplicate and uppercase for Windows-case-insensitive matching.
+        $this->allowlist = array_values(array_unique(array_map('strtoupper', $allowlist)));
+    }
+
+    /**
+     * Return a copy of this policy with additional env vars that will be
+     * injected into the subprocess regardless of the parent process's env.
+     *
+     * Use for values the installer itself generates — DB passwords via
+     * PGPASSWORD / MYSQL_PWD, per-subprocess temp paths, etc. These do NOT
+     * come from the parent env at all.
+     *
+     * @param array<string, string> $extras
+     */
+    public function withExtra(array $extras): self
+    {
+        $clone = clone $this;
+        foreach ($extras as $key => $value) {
+            if (! is_string($key) || ! is_string($value)) {
+                throw new \InvalidArgumentException('EnvPolicy::withExtra expects array<string, string>.');
+            }
+            $clone->extras[$key] = $value;
+        }
+
+        return $clone;
+    }
+
+    /**
+     * Minimal policy — PATH + locale only. Use for `--version` probes and other
+     * subprocesses that should never see credentials.
+     */
+    public static function minimal(): self
+    {
+        return new self(self::BASE_ALLOWLIST);
+    }
+
+    /**
+     * Build-tool policy — base + composer/npm/git passthrough. Use for
+     * `composer install`, `npm run build`, `php artisan`, `git commit`.
+     * Notably does NOT include AI credentials.
+     */
+    public static function buildTool(): self
+    {
+        return new self(array_merge(self::BASE_ALLOWLIST, self::TOOL_PASSTHROUGH));
+    }
+
+    /**
+     * AI-tool policy — base + passthrough + credentials for the named AI only.
+     * Other providers' keys are filtered out.
+     */
+    public static function forAiTool(string $toolName): self
+    {
+        $credentials = self::AI_CREDENTIALS[$toolName] ?? [];
+
+        return new self(array_merge(self::BASE_ALLOWLIST, self::TOOL_PASSTHROUGH, $credentials));
+    }
+
+    /**
+     * Apply the policy to the current process env, returning the filtered
+     * env suitable for proc_open().
+     *
+     * @return array<string, string>
+     */
+    public function apply(): array
+    {
+        $sourceRaw = getenv();
+        if (! is_array($sourceRaw)) {
+            return [];
+        }
+
+        // Normalise keys to uppercase for Windows-style matching while
+        // preserving the original case for the spawned process.
+        $result = [];
+        foreach ($sourceRaw as $key => $value) {
+            if (! is_string($key) || ! is_string($value)) {
+                continue;
+            }
+
+            $upper = strtoupper($key);
+
+            // Strip AI-nesting markers unconditionally.
+            if (in_array($upper, self::NESTING_MARKERS, true)) {
+                continue;
+            }
+
+            if (in_array($upper, $this->allowlist, true)) {
+                $result[$key] = $value;
+            }
+        }
+
+        // Extras override parent env — intentional, they're the caller's
+        // explicit value (e.g., PGPASSWORD set by DB configurator).
+        foreach ($this->extras as $key => $value) {
+            $result[$key] = $value;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array<string>  Uppercase allowlist for inspection/testing.
+     */
+    public function allowlist(): array
+    {
+        return $this->allowlist;
+    }
+}

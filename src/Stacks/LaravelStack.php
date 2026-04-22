@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Tessera\Installer\Stacks;
 
+use Tessera\Installer\CommandRunner;
 use Tessera\Installer\Complexity;
 use Tessera\Installer\Console;
+use Tessera\Installer\DatabaseIdentifier;
+use Tessera\Installer\EnvFile;
+use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Memory;
 use Tessera\Installer\Stacks\Prompts\LaravelPrompts;
 use Tessera\Installer\StepRunner;
@@ -288,7 +292,7 @@ final class LaravelStack implements StackInterface
             $this->fullPath,
         );
 
-        if ($coreExit === 0) {
+        if ($coreExit === 0 && $devExit === 0) {
             // Generate autoload once
             Console::spinner('Generating autoload...');
             Console::exec('composer dump-autoload', $this->fullPath);
@@ -297,9 +301,22 @@ final class LaravelStack implements StackInterface
             return true;
         }
 
-        // Bulk failed — fall back to StepRunner for individual installs with retry
-        return $this->steps->installPackages('Install core packages', $packages)
-            && $this->steps->installPackages('Install dev tools', $devPackages, dev: true);
+        // Bulk failed for core and/or dev — fall back to StepRunner for individual installs with retry.
+        // Run the failing set(s) only; skip the set that already succeeded.
+        $ok = true;
+        if ($coreExit !== 0) {
+            $ok = $this->steps->installPackages('Install core packages', $packages) && $ok;
+        }
+        if ($devExit !== 0) {
+            $ok = $this->steps->installPackages('Install dev tools', $devPackages, dev: true) && $ok;
+        }
+
+        if ($ok) {
+            Console::spinner('Generating autoload...');
+            Console::exec('composer dump-autoload', $this->fullPath);
+        }
+
+        return $ok;
     }
 
     private function setupFilament(): bool
@@ -1361,12 +1378,18 @@ HELPER);
         }
 
         if ($db === 'sqlite') {
-            $env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=sqlite', $env);
-            $env = preg_replace('/^DB_HOST=.*\n?/m', '', $env);
-            $env = preg_replace('/^DB_PORT=.*\n?/m', '', $env);
-            $env = preg_replace('/^DB_DATABASE=(?!.*database\.sqlite).*\n?/m', '', $env);
-            $env = preg_replace('/^DB_USERNAME=.*\n?/m', '', $env);
-            $env = preg_replace('/^DB_PASSWORD=.*\n?/m', '', $env);
+            $env = EnvFile::setKey($env, 'DB_CONNECTION', 'sqlite');
+            $env = EnvFile::removeKey($env, 'DB_HOST');
+            $env = EnvFile::removeKey($env, 'DB_PORT');
+
+            // Keep DB_DATABASE only if it already points at the sqlite file;
+            // for any other value, drop it so Laravel uses the default path.
+            if (preg_match('/^DB_DATABASE=.*database\.sqlite/m', $env) !== 1) {
+                $env = EnvFile::removeKey($env, 'DB_DATABASE');
+            }
+
+            $env = EnvFile::removeKey($env, 'DB_USERNAME');
+            $env = EnvFile::removeKey($env, 'DB_PASSWORD');
         }
 
         file_put_contents($envFile, $env);
@@ -1378,6 +1401,18 @@ HELPER);
      * Ask for credentials and try to connect to MySQL/MariaDB or PostgreSQL.
      * Returns true if connection succeeded, false if it failed.
      * On success, writes credentials to $env (passed by reference).
+     *
+     * Hardening notes:
+     *   - Credentials reach the DB client via array argv (no shell), so user
+     *     input can never inject commands.
+     *   - Passwords go through env vars (PGPASSWORD / MYSQL_PWD) rather than
+     *     -p flags; argv is visible in `ps`, env vars of another user's
+     *     process are not.
+     *   - Database name and username are validated against a strict allowlist
+     *     before being embedded in DDL (CREATE DATABASE cannot be parameterised).
+     *   - Writing to `.env` goes through EnvFile::setKey which quotes/escapes
+     *     any dangerous characters; raw preg_replace on user input corrupted
+     *     the file on passwords containing `#`, `$`, quote, or newline.
      */
     private function configureDatabaseServer(string $db, string &$env, string $projectName): bool
     {
@@ -1389,27 +1424,26 @@ HELPER);
 
         Console::line();
         Console::bold("{$label} credentials:");
+
         $dbHost = Console::ask('Database host', '127.0.0.1');
         $dbPort = Console::ask('Database port', $defaultPort);
-        $dbUser = Console::ask('Database username', $defaultUser);
-        $dbPass = Console::ask('Database password (leave empty for none)', '');
-        $dbName = Console::ask('Database name', $projectName);
 
-        // Test connection first
-        if ($isPostgres) {
-            $pgEnv = $dbPass !== '' ? "PGPASSWORD={$dbPass} " : '';
-            $testCmd = "{$pgEnv}psql -h {$dbHost} -p {$dbPort} -U {$dbUser} -c \"SELECT 1;\" 2>&1";
-        } else {
-            $passFlag = $dbPass !== '' ? " -p{$dbPass}" : '';
-            $cli = $db === 'mariadb' ? 'mariadb' : 'mysql';
-            $testCmd = "{$cli} -u {$dbUser}{$passFlag} -h {$dbHost} -P {$dbPort} -e \"SELECT 1;\" 2>&1";
+        $dbUser = $this->askValidatedIdentifier('Database username', $defaultUser);
+        if ($dbUser === null) {
+            return false;
         }
 
-        $result = Console::execSilent($testCmd, $this->fullPath);
+        $dbPass = Console::ask('Database password (leave empty for none)', '');
 
-        if ($result['exit'] !== 0) {
-            Console::line();
-            Console::warn("Could not connect to {$label}: {$result['output']}");
+        $dbName = $this->askValidatedIdentifier('Database name', $projectName);
+        if ($dbName === null) {
+            return false;
+        }
+
+        // Validate host/port shape too — they reach argv but we still don't
+        // want random bytes flowing into DB clients.
+        if (! $this->isPlausibleHost($dbHost) || ! ctype_digit($dbPort) || (int) $dbPort < 1 || (int) $dbPort > 65535) {
+            Console::warn('Host must be a hostname or IP, port must be a number 1-65535.');
 
             if (Console::confirm('Retry with different credentials?', true)) {
                 return $this->configureDatabaseServer($db, $env, $projectName);
@@ -1418,70 +1452,171 @@ HELPER);
             return false;
         }
 
-        // Connection works — write credentials to env
-        $env = preg_replace('/^DB_CONNECTION=.*/m', "DB_CONNECTION={$connection}", $env);
-        $env = preg_replace('/^DB_HOST=.*/m', "DB_HOST={$dbHost}", $env);
-        $env = preg_replace('/^DB_PORT=.*/m', "DB_PORT={$dbPort}", $env);
-        $env = preg_replace('/^DB_DATABASE=.*/m', "DB_DATABASE={$dbName}", $env);
-        $env = preg_replace('/^DB_USERNAME=.*/m', "DB_USERNAME={$dbUser}", $env);
-        $env = preg_replace('/^DB_PASSWORD=.*/m', "DB_PASSWORD={$dbPass}", $env);
+        $cli = $db === 'mariadb' ? 'mariadb' : ($isPostgres ? 'psql' : 'mysql');
+        $runner = new CommandRunner();
 
-        if (! preg_match('/^DB_HOST=/m', $env)) {
-            $env = preg_replace('/^(DB_CONNECTION=.*)$/m', "$1\nDB_HOST={$dbHost}\nDB_PORT={$dbPort}\nDB_DATABASE={$dbName}\nDB_USERNAME={$dbUser}\nDB_PASSWORD={$dbPass}", $env);
+        // 1) Test connection.
+        $testResult = $isPostgres
+            ? $runner->run(
+                argv: ['psql', '-h', $dbHost, '-p', $dbPort, '-U', $dbUser, '-c', 'SELECT 1;'],
+                cwd: $this->fullPath,
+                env: $this->dbEnv($isPostgres ? 'postgres' : 'mysql', $dbPass),
+                timeout: 15,
+            )
+            : $runner->run(
+                argv: [$cli, '-u', $dbUser, '-h', $dbHost, '-P', $dbPort, '-e', 'SELECT 1;'],
+                cwd: $this->fullPath,
+                env: $this->dbEnv('mysql', $dbPass),
+                timeout: 15,
+            );
+
+        if (! $testResult->succeeded()) {
+            Console::line();
+            Console::warn("Could not connect to {$label}: ".trim($testResult->combinedOutput()));
+
+            if (Console::confirm('Retry with different credentials?', true)) {
+                return $this->configureDatabaseServer($db, $env, $projectName);
+            }
+
+            return false;
         }
 
-        // Try to create the database (use single quotes for MySQL identifier quoting — backticks break on Windows)
-        if ($isPostgres) {
-            $pgEnv = $dbPass !== '' ? "PGPASSWORD={$dbPass} " : '';
-            $createResult = Console::execSilent("{$pgEnv}createdb -h {$dbHost} -p {$dbPort} -U {$dbUser} {$dbName} 2>&1", $this->fullPath);
-        } else {
-            $passFlag = $dbPass !== '' ? " -p{$dbPass}" : '';
-            $cli = $db === 'mariadb' ? 'mariadb' : 'mysql';
-            $createResult = Console::execSilent("{$cli} -u {$dbUser}{$passFlag} -h {$dbHost} -P {$dbPort} -e \"CREATE DATABASE IF NOT EXISTS {$dbName};\"", $this->fullPath);
-        }
+        // 2) Connection works — write credentials to .env via safe quoting.
+        $env = EnvFile::setKey($env, 'DB_CONNECTION', $connection);
+        $env = EnvFile::setKey($env, 'DB_HOST', $dbHost);
+        $env = EnvFile::setKey($env, 'DB_PORT', $dbPort);
+        $env = EnvFile::setKey($env, 'DB_DATABASE', $dbName);
+        $env = EnvFile::setKey($env, 'DB_USERNAME', $dbUser);
+        $env = EnvFile::setKey($env, 'DB_PASSWORD', $dbPass);
 
-        if ($createResult['exit'] === 0) {
+        // 3) Try to create the database. $dbName has been validated against a
+        //    strict allowlist above, so embedding it in DDL is safe.
+        $createResult = $isPostgres
+            ? $runner->run(
+                argv: ['createdb', '-h', $dbHost, '-p', $dbPort, '-U', $dbUser, $dbName],
+                cwd: $this->fullPath,
+                env: $this->dbEnv('postgres', $dbPass),
+                timeout: 15,
+            )
+            : $runner->run(
+                argv: [$cli, '-u', $dbUser, '-h', $dbHost, '-P', $dbPort, '-e', "CREATE DATABASE IF NOT EXISTS {$dbName};"],
+                cwd: $this->fullPath,
+                env: $this->dbEnv('mysql', $dbPass),
+                timeout: 15,
+            );
+
+        if ($createResult->succeeded()) {
             Console::success("Database '{$dbName}' ready");
 
             return true;
         }
 
-        // Auto-create failed — check if the database already exists
-        if ($isPostgres) {
-            $pgEnv = $dbPass !== '' ? "PGPASSWORD={$dbPass} " : '';
-            $checkResult = Console::execSilent("{$pgEnv}psql -h {$dbHost} -p {$dbPort} -U {$dbUser} -d {$dbName} -c \"SELECT 1;\" 2>&1", $this->fullPath);
-        } else {
-            $checkResult = Console::execSilent("{$cli} -u {$dbUser}{$passFlag} -h {$dbHost} -P {$dbPort} {$dbName} -e \"SELECT 1;\" 2>&1", $this->fullPath);
-        }
+        // 4) Auto-create failed — maybe it already exists. Probe it.
+        $checkResult = $isPostgres
+            ? $runner->run(
+                argv: ['psql', '-h', $dbHost, '-p', $dbPort, '-U', $dbUser, '-d', $dbName, '-c', 'SELECT 1;'],
+                cwd: $this->fullPath,
+                env: $this->dbEnv('postgres', $dbPass),
+                timeout: 15,
+            )
+            : $runner->run(
+                argv: [$cli, '-u', $dbUser, '-h', $dbHost, '-P', $dbPort, $dbName, '-e', 'SELECT 1;'],
+                cwd: $this->fullPath,
+                env: $this->dbEnv('mysql', $dbPass),
+                timeout: 15,
+            );
 
-        if ($checkResult['exit'] === 0) {
+        if ($checkResult->succeeded()) {
             Console::success("Database '{$dbName}' already exists");
 
             return true;
         }
 
-        // Database doesn't exist and we can't create it — wait for user
-        Console::warn("Could not create database: {$createResult['output']}");
+        // 5) Database doesn't exist and we can't create it — wait for user.
+        Console::warn('Could not create database: '.trim($createResult->combinedOutput()));
         Console::line("Please create the '{$dbName}' database manually, then press Enter to continue.");
-
         Console::ask('Press Enter when ready');
 
-        // Verify after user says they created it
-        if ($isPostgres) {
-            $verifyResult = Console::execSilent("{$pgEnv}psql -h {$dbHost} -p {$dbPort} -U {$dbUser} -d {$dbName} -c \"SELECT 1;\" 2>&1", $this->fullPath);
-        } else {
-            $verifyResult = Console::execSilent("{$cli} -u {$dbUser}{$passFlag} -h {$dbHost} -P {$dbPort} {$dbName} -e \"SELECT 1;\" 2>&1", $this->fullPath);
-        }
+        $verifyResult = $isPostgres
+            ? $runner->run(
+                argv: ['psql', '-h', $dbHost, '-p', $dbPort, '-U', $dbUser, '-d', $dbName, '-c', 'SELECT 1;'],
+                cwd: $this->fullPath,
+                env: $this->dbEnv('postgres', $dbPass),
+                timeout: 15,
+            )
+            : $runner->run(
+                argv: [$cli, '-u', $dbUser, '-h', $dbHost, '-P', $dbPort, $dbName, '-e', 'SELECT 1;'],
+                cwd: $this->fullPath,
+                env: $this->dbEnv('mysql', $dbPass),
+                timeout: 15,
+            );
 
-        if ($verifyResult['exit'] === 0) {
+        if ($verifyResult->succeeded()) {
             Console::success("Database '{$dbName}' ready");
 
             return true;
         }
 
-        Console::warn("Still cannot access database '{$dbName}': {$verifyResult['output']}");
+        Console::warn("Still cannot access database '{$dbName}': ".trim($verifyResult->combinedOutput()));
 
         return false;
+    }
+
+    /**
+     * Ask for a value and validate it against DatabaseIdentifier rules.
+     * Returns null if the user declines to retry with a valid value.
+     */
+    private function askValidatedIdentifier(string $prompt, string $default): ?string
+    {
+        while (true) {
+            $value = Console::ask($prompt, $default);
+
+            if (DatabaseIdentifier::isValid($value)) {
+                return $value;
+            }
+
+            Console::warn(
+                "Invalid {$prompt}: must start with a letter or underscore and contain only "
+                .'letters, digits, underscore, or hyphen (max 63 chars).',
+            );
+
+            if (! Console::confirm('Try again?', true)) {
+                return null;
+            }
+        }
+    }
+
+    /**
+     * Cheap shape check for DB host. Hostnames and IP literals; rejects shell
+     * metacharacters and whitespace. Real hostname validation is left to the
+     * DB client — this only guards against obvious garbage.
+     */
+    private function isPlausibleHost(string $host): bool
+    {
+        if ($host === '' || strlen($host) > 253) {
+            return false;
+        }
+
+        return (bool) preg_match('/\A[A-Za-z0-9._:\-]+\z/', $host);
+    }
+
+    /**
+     * Build an EnvPolicy for DB-client subprocesses, injecting the password
+     * via the engine's designated env var (PGPASSWORD for PostgreSQL,
+     * MYSQL_PWD for MySQL/MariaDB). This keeps the password out of argv,
+     * where `ps` / Windows Task Manager would expose it.
+     */
+    private function dbEnv(string $engine, string $password): EnvPolicy
+    {
+        $policy = EnvPolicy::buildTool();
+
+        if ($password === '') {
+            return $policy;
+        }
+
+        $extraKey = $engine === 'postgres' ? 'PGPASSWORD' : 'MYSQL_PWD';
+
+        return $policy->withExtra([$extraKey => $password]);
     }
 
     /**
