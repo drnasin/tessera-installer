@@ -11,7 +11,7 @@ composer install
 ## Running Tests
 
 ```bash
-# All tests (131 tests, zero token usage)
+# All tests (399 tests, zero token usage)
 vendor/bin/phpunit
 
 # Specific test file
@@ -52,13 +52,19 @@ src/
 └── Stacks/
     ├── StackInterface.php  # Contract for all stacks
     ├── StackRegistry.php   # Stack discovery and AI context
-    ├── LaravelStack.php    # Laravel + Filament stack
-    ├── NodeStack.php       # Node.js / Next.js stack
-    ├── GoStack.php         # Go backend stack
-    ├── FlutterStack.php    # Flutter mobile stack
-    ├── StaticStack.php     # Static site (HTML + Tailwind)
-    └── Prompts/
-        └── LaravelPrompts.php  # Extracted AI prompt templates
+    ├── LaravelStack.php    # Laravel + Filament stack (pre-AI shell + lifecycle)
+    ├── NodeStack.php       # Node.js / Next.js stack (lifecycle only)
+    ├── GoStack.php         # Go backend stack (lifecycle only)
+    ├── FlutterStack.php    # Flutter mobile stack (flutter create + lifecycle)
+    ├── StaticStack.php     # Static site (lifecycle only)
+    └── YamlStackRunner.php # Drop-in scaffold() replacement that runs YAML manifests
+
+stacks/                     # versioned `{{var}}` prompt templates
+├── laravel.yaml
+├── node.yaml
+├── go.yaml
+├── flutter.yaml
+└── static.yaml
 ```
 
 ## Adding a New Stack
