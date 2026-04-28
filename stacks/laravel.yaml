@@ -18,7 +18,7 @@ steps:
   - id: core_models
     name: "Creating database models and services"
     complexity: complex
-    timeout: 2400
+    timeout: 3600
     prompt: |
       You are a SENIOR Laravel developer building a Tessera CMS project from scratch.
       Think carefully about what THIS specific project needs before writing any code.
@@ -166,7 +166,7 @@ steps:
   - id: theme
     name: "Designing frontend theme and pages"
     complexity: complex
-    timeout: 2400
+    timeout: 3600
     dependencies:
       - core_models
     prompt: |
@@ -296,7 +296,7 @@ steps:
   - id: admin
     name: "Building admin panel"
     complexity: complex
-    timeout: 2400
+    timeout: 3600
     dependencies:
       - theme
     prompt: |
