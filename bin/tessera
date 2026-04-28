@@ -88,26 +88,62 @@ if ($command === 'doctor') {
     exit(0);
 }
 
+// ─── Plan subcommands (compile / show / diff) ───
+
+if ($command === 'plan') {
+    $sub = $args[1] ?? null;
+    $rest = array_slice($args, 2);
+
+    $registry = [
+        'compile' => \Tessera\Installer\Commands\PlanCompileCommand::class,
+        'show' => \Tessera\Installer\Commands\PlanShowCommand::class,
+        'diff' => \Tessera\Installer\Commands\PlanDiffCommand::class,
+    ];
+
+    if ($sub === null || $sub === '--help' || $sub === '-h') {
+        Console::line();
+        Console::bold('tessera plan — work with compiled plan.json artifacts');
+        Console::line();
+        foreach ($registry as $name => $class) {
+            $cmd = new $class;
+            Console::line(sprintf('  %-10s  %s', $name, $cmd->description()));
+        }
+        Console::line();
+        exit(0);
+    }
+
+    if (! isset($registry[$sub])) {
+        Console::error("Unknown plan subcommand: {$sub}");
+        Console::line('Use: tessera plan --help');
+        exit(1);
+    }
+
+    $cmd = new $registry[$sub];
+    exit($cmd->run($rest));
+}
+
 // ─── New project ───
 
 if ($command === 'new') {
-    $directory = $args[1] ?? null;
+    $parsed = \Tessera\Installer\Cli\NewCommandArgs::parse(array_slice($args, 1));
 
-    if (! $directory) {
+    if ($parsed->directory === null) {
         Console::error('Missing directory name.');
         Console::line('Usage: tessera new {project-name}');
         exit(1);
     }
 
-    // Validate directory name
-    if (! preg_match('/^[a-zA-Z0-9._-]+$/', $directory)) {
+    if (! preg_match('/^[a-zA-Z0-9._-]+$/', $parsed->directory)) {
         Console::error('Invalid directory name. Use only letters, numbers, -, _, .');
         exit(1);
     }
 
-    $force = in_array('--force', $args, true) || in_array('-f', $args, true);
-
-    $cmd = new NewCommand($directory, $force);
+    $cmd = new NewCommand(
+        $parsed->directory,
+        $parsed->force,
+        $parsed->forcedStack,
+        $parsed->requirementsFixturePath,
+    );
     exit($cmd->run());
 }
 
@@ -125,10 +161,15 @@ function showHelp(): void
     Console::cyan('  TESSERA — AI-Native CMS Installer');
     Console::line();
     Console::line('  Usage:');
-    Console::line('    tessera new {project-name}           Create a new Tessera project');
-    Console::line('    tessera new {project-name} --force   Overwrite existing directory');
+    Console::line('    tessera new {project-name}                       Create a new Tessera project');
+    Console::line('    tessera new {project-name} --force               Overwrite existing directory');
+    Console::line('    tessera new {project-name} --stack=<name>        Skip AI stack selection');
+    Console::line('    tessera new {project-name} --requirements-fixture=<path>  Skip interactive Q&A');
     Console::line('    tessera doctor                       Check if everything is ready');
     Console::line('    tessera tools                        Show available AI tools');
+    Console::line('    tessera plan compile <yaml> [-o]     Compile a stack manifest to plan.json');
+    Console::line('    tessera plan show [<plan.json>]      Show what a compiled plan will do');
+    Console::line('    tessera plan diff <a.json> <b.json>  Semantic diff between two plans');
     Console::line('    tessera --version                    Version');
     Console::line('    tessera --help                       This message');
     Console::line();

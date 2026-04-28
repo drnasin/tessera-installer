@@ -4,6 +4,8 @@ composer.lock
 .phpunit.cache/
 .idea/
 .vscode/
+.claude/
+.ai/
 *.swp
 TEST_*.md
 TESSERA_WEBSITE.md

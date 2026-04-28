@@ -30,11 +30,21 @@ final class NewCommand
 
     private bool $force;
 
-    public function __construct(string $directory, bool $force = false)
-    {
+    private ?string $forcedStack;
+
+    private ?string $requirementsFixturePath;
+
+    public function __construct(
+        string $directory,
+        bool $force = false,
+        ?string $forcedStack = null,
+        ?string $requirementsFixturePath = null,
+    ) {
         $this->directory = $directory;
         $this->fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
         $this->force = $force;
+        $this->forcedStack = $forcedStack;
+        $this->requirementsFixturePath = $requirementsFixturePath;
         $this->system = SystemInfo::detect();
     }
 
@@ -58,14 +68,52 @@ final class NewCommand
             // resumeResult === null means: directory is clean, continue with fresh install
         }
 
-        // Step 3: AI-driven conversation to understand requirements
-        $requirements = $this->gatherRequirements();
-
-        if ($requirements === null) {
-            return 1;
+        // Step 3: AI-driven conversation OR --requirements-fixture
+        if ($this->requirementsFixturePath !== null) {
+            $requirements = $this->loadRequirementsFixture($this->requirementsFixturePath);
+            if ($requirements === null) {
+                return 1;
+            }
+        } else {
+            $requirements = $this->gatherRequirements();
+            if ($requirements === null) {
+                return 1;
+            }
         }
 
-        return $this->buildProject($requirements);
+        return $this->buildProject($requirements, $this->forcedStack);
+    }
+
+    /**
+     * Load a JSON requirements fixture instead of running interactive Q&A.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function loadRequirementsFixture(string $path): ?array
+    {
+        if (! is_file($path)) {
+            Console::error("Requirements fixture not found: {$path}");
+
+            return null;
+        }
+
+        $raw = file_get_contents($path);
+        if ($raw === false) {
+            Console::error("Could not read fixture: {$path}");
+
+            return null;
+        }
+
+        $decoded = json_decode($raw, true);
+        if (! is_array($decoded)) {
+            Console::error("Fixture is not valid JSON: {$path}");
+
+            return null;
+        }
+
+        Console::success("Using requirements fixture: {$path}");
+
+        return $decoded;
     }
 
     private function showBanner(): void
@@ -259,12 +307,14 @@ final class NewCommand
      */
     private function buildProject(array $requirements, ?string $resumeStack = null): int
     {
-        // On resume, use the saved stack — no need to ask AI again
-        if ($resumeStack !== null) {
-            $stack = StackRegistry::get($resumeStack);
+        // On resume OR with --stack=name, use the saved/forced stack — no need to ask AI.
+        $forcedStack = $resumeStack ?? $this->forcedStack;
+
+        if ($forcedStack !== null) {
+            $stack = StackRegistry::get($forcedStack);
 
             if ($stack === null) {
-                Console::warn("Saved stack '{$resumeStack}' not found. Re-detecting...");
+                Console::warn("Stack '{$forcedStack}' not found. Falling back to AI selection...");
                 $stack = $this->decideStack($requirements);
             }
         } else {
@@ -275,8 +325,8 @@ final class NewCommand
             return 1;
         }
 
-        // Only ask for confirmation on fresh installs
-        if ($resumeStack === null) {
+        // Only ask for confirmation on fresh installs without a forced stack.
+        if ($resumeStack === null && $this->forcedStack === null) {
             Console::line();
             Console::bold("AI recommends: {$stack->label()}");
             Console::line();

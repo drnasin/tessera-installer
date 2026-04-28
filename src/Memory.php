@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace Tessera\Installer;
 
+use Tessera\Installer\Schema\SchemaVersion;
+
 /**
  * Tracks installer state and progress in .tessera/state.json.
  *
  * AI reads this to know where it is, what it's doing, and what's next.
  * State persists across retries and can be used for recovery.
+ *
+ * Every state.json now carries a `schema` field (SchemaVersion::STATE) so
+ * future readers can refuse unknown shapes rather than guessing. Older
+ * state files (pre-schema) load fine — the field is added on next save.
  */
 final class Memory
 {
@@ -34,6 +40,7 @@ final class Memory
     public function init(string $projectName, string $stack, array $requirements, string $systemContext): void
     {
         $this->state = [
+            'schema' => SchemaVersion::STATE,
             'project' => $projectName,
             'stack' => $stack,
             'requirements' => $requirements,
@@ -41,6 +48,7 @@ final class Memory
             'started_at' => date('Y-m-d H:i:s'),
             'updated_at' => date('Y-m-d H:i:s'),
             'status' => 'in_progress',
+            'trace_id' => bin2hex(random_bytes(8)),
             'current_step' => null,
             'completed_steps' => [],
             'failed_steps' => [],

@@ -1,0 +1,160 @@
+name: node
+label: "Node.js (Next.js / Express)"
+description: "API servers, real-time apps, SSR web apps, SaaS dashboards. Node.js + TypeScript + Next.js or Express + Prisma + PostgreSQL."
+manifest_version: "1"
+
+requires:
+  - node
+  - npm
+
+steps:
+  - id: scaffold
+    name: "[1/4] Creating project structure"
+    complexity: complex
+    timeout: 1500
+    prompt: |
+      You are a SENIOR Node.js/TypeScript developer building a project from scratch.
+      Think carefully about what THIS specific project needs before writing any code.
+
+      {{systemContext}}
+
+      RUNTIME: {{nodeVersion}}
+      PROJECT: {{description}}
+      LANGUAGES: {{langs}}
+      GENERATE FRONTEND: {{needsFrontend}}
+      DESIGN STYLE: {{designStyle}}
+      DESIGN COLORS: {{designColors}}
+      E-COMMERCE: {{shop}}
+      PAYMENT PROVIDERS: {{payments}}
+      COUNTRY: {{country}}
+
+      STEP 1 — THINK (do not skip):
+      - What entities does this project need? (Users, Products, Orders, Posts, Comments?)
+      - What pages/routes are needed? (Home, Dashboard, Product listing, Cart, Checkout?)
+      - Does it need authentication? (shop = yes, public API = maybe not)
+      - Does it need real-time? (chat = yes, blog = no)
+      - What payment SDKs need to be installed?
+
+      STEP 2 — CREATE:
+      1. package.json with ALL needed dependencies:
+         - Framework: Next.js (if frontend) or Express (if API-only)
+         - TypeScript, ESLint, Prettier
+         - Prisma ORM
+         - Authentication (next-auth or passport)
+         - IF E-COMMERCE: payment provider SDKs ({{payments}})
+         - IF real-time: socket.io or ws
+      2. tsconfig.json, .eslintrc, .prettierrc
+      3. prisma/schema.prisma — database models appropriate for THIS project
+      4. src/ structure:
+         - API routes/handlers with proper validation (zod)
+         - Services/business logic layer
+         - IF FRONTEND: pages with Tailwind CSS styling
+         - IF E-COMMERCE: cart, checkout, order management, payment integration
+      5. Docker compose for dev environment (PostgreSQL + app)
+      6. .env.example with ALL needed environment variables with descriptive comments
+      7. README.md with setup instructions
+
+      IF GENERATE FRONTEND is YES:
+      - Design style: {{designStyle}}, Colors: {{designColors}}
+      - Responsive, mobile-first, professional quality
+      - Content realistic for the business, in {{langs}} — NO lorem ipsum
+      - Navigation, hero section, footer — all styled and functional
+
+      IF E-COMMERCE is YES:
+      - Product listing with filtering/sorting
+      - Shopping cart (localStorage + API)
+      - Checkout flow with payment integration
+      - Order confirmation page
+      - Each payment provider must define its required env vars in .env.example
+        Example: # Stripe — get keys at https://dashboard.stripe.com/apikeys
+                 STRIPE_SECRET_KEY=sk_test_...
+                 STRIPE_PUBLISHABLE_KEY=pk_test_...
+                 STRIPE_WEBHOOK_SECRET=whsec_...
+
+      IMPORTANT: Use features appropriate for the detected Node.js version.
+
+      THREE RULES:
+      1. DESIGN FOR THE BUSINESS. Ask what the business does and who the customers are before choosing
+         colors or layout. Light backgrounds for most businesses. Dark only if the brand demands it.
+      2. USE IT LIKE A CUSTOMER. Open every page in your head. Click every link, read every text,
+         submit every form, browse on a phone. If anything is broken or invisible — fix it.
+      3. VERIFY BEFORE YOU USE. Before referencing any route, import, env var, or API path — read
+         the source file where it's defined. Never assume names from memory.
+    prompt_version: "1"
+    gates:
+      - type: exists_any
+        severity: hard
+        patterns:
+          - package.json
+
+  - id: tests
+    name: "[2/4] Generating tests"
+    complexity: medium
+    timeout: 600
+    skippable: true
+    dependencies:
+      - scaffold
+    prompt: |
+      Create tests for this Node.js project. Read the project structure first to understand what exists.
+
+      Use Jest or Vitest (whichever fits the project setup).
+      Create tests in __tests__/ or tests/ directory:
+      1. API endpoint tests (if routes exist) — test request/response, status codes, validation
+      2. Page render tests (if Next.js pages exist) — test that pages render without errors
+      3. Service/business logic tests — test core logic
+      4. IF e-commerce: test cart operations, order creation, payment flow (mock external APIs)
+
+      IMPORTANT: Write ONLY tests that will PASS with the current codebase.
+      Do NOT test features that don't exist.
+    prompt_version: "1"
+
+  - id: tests_fixed
+    name: "[3/4] Running and fixing tests"
+    complexity: medium
+    timeout: 600
+    skippable: true
+    dependencies:
+      - tests
+    prompt: |
+      Run the project tests: npm test (or npx jest or npx vitest run)
+      If any tests fail, analyze the output and fix either the test or the code.
+      Do NOT delete tests — fix them. Up to 3 attempts.
+    prompt_version: "1"
+
+  - id: setup_md
+    name: "[4/4] Generating setup instructions"
+    complexity: simple
+    timeout: 300
+    skippable: true
+    dependencies:
+      - tests_fixed
+    prompt: |
+      Read the entire project you just built. Generate a SETUP.md file in the project root.
+
+      PROJECT: {{description}}
+      E-COMMERCE: {{shop}}
+      PAYMENT PROVIDERS: {{payments}}
+      COUNTRY: {{country}}
+
+      SETUP.md must include:
+
+      1. QUICK START — commands to run, default URLs, test credentials
+      2. ENVIRONMENT VARIABLES — list EVERY .env variable with:
+         - Exact key name, what it is, WHERE to get it (with URL), required vs optional
+      3. DATABASE SETUP — how to run migrations, seed data
+      4. PAYMENT PROVIDER SETUP (if e-commerce) — for EACH provider:
+         - Account creation steps, where to get API keys
+         - Test/sandbox credentials and test card numbers
+         - Webhook URL to configure
+         - Production switch checklist
+      5. DEPLOYMENT — Docker, Vercel, or Railway instructions
+      6. PRODUCTION CHECKLIST — security, env vars, database, SSL, monitoring
+      7. COMMON TASKS — how to add a new API endpoint, page, model
+
+      Write for a JUNIOR developer. Explain briefly when using technical terms.
+    prompt_version: "1"
+    gates:
+      - type: exists_any
+        severity: soft
+        patterns:
+          - SETUP.md

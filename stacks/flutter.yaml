@@ -1,0 +1,183 @@
+name: flutter
+label: "Flutter (Mobile + Web App)"
+description: "Cross-platform mobile apps (iOS + Android), web apps, desktop apps. Dart + Flutter + Riverpod + go_router + Material 3."
+manifest_version: "1"
+
+requires:
+  - flutter
+  - dart
+
+# Note: this manifest covers the AI portion of a Flutter build only.
+# `flutter create` runs in FlutterStack.php as a pre-AI shell step because
+# it requires an empty target directory and produces the pubspec.yaml the
+# manifest then mutates. After this manifest, lifecycle (`flutter pub get`,
+# iOS/Android signing pointers) stays in PHP.
+
+steps:
+  - id: scaffold
+    name: "[2/5] Configuring app structure and screens"
+    complexity: complex
+    timeout: 1500
+    skippable: true
+    prompt: |
+      You are a SENIOR Flutter/Dart developer configuring a project for production.
+      A Flutter project was just created with `flutter create`. Now make it production-ready.
+      Think carefully about what THIS specific app needs.
+
+      {{systemContext}}
+
+      RUNTIME: {{flutterVersion}}
+      PROJECT: {{description}}
+      LANGUAGES: {{langs}}
+      DESIGN STYLE: {{designStyle}}
+      DESIGN COLORS: {{designColors}}
+      E-COMMERCE: {{shop}}
+      PAYMENT PROVIDERS: {{payments}}
+      COUNTRY: {{country}}
+
+      STEP 1 — THINK (do not skip):
+      - What screens does this app need? (Home, Profile, Settings, Product List, Cart, Checkout?)
+      - What data models are needed? (User, Product, Order, Message?)
+      - Does it need authentication? (most mobile apps do)
+      - Does it need payments? Which SDK? (stripe_sdk, in_app_purchase?)
+      - Does it need push notifications?
+      - Does it need a backend? (Firebase, Supabase, custom API?)
+      - Does it need offline support? (local database, caching?)
+      - What state management fits? (Riverpod for most cases)
+
+      STEP 2 — CONFIGURE:
+      1. pubspec.yaml — add ALL needed dependencies:
+         - State management: flutter_riverpod
+         - Routing: go_router
+         - HTTP: dio
+         - Code generation: freezed, json_serializable, build_runner
+         - Local storage: shared_preferences or hive
+         - IF authentication: firebase_auth or supabase_flutter
+         - IF e-commerce: payment SDKs for {{payments}}
+         - IF push notifications: firebase_messaging
+         - IF offline: sqflite or isar
+
+      2. Project structure:
+         lib/
+           core/ — theme, constants, utils, extensions
+           features/ — one folder per feature (auth/, home/, products/, cart/, etc.)
+             each feature: screens/, widgets/, providers/, models/
+           shared/ — shared widgets, services, models
+           router.dart — go_router configuration
+           app.dart — MaterialApp.router with theme
+
+      3. Theme (lib/core/theme.dart):
+         - Material 3 with ColorScheme matching: {{designColors}}
+         - Style: {{designStyle}}
+         - Custom TextTheme, ButtonTheme, CardTheme
+         - Light and dark mode support
+
+      4. Screens — realistic UI for THIS app:
+         - Create screens based on what the app needs (think step 1)
+         - Each screen must look professional — proper spacing, typography, icons
+         - Use Material 3 components (FilledButton, Card, NavigationBar)
+         - Content in {{langs}}
+
+      5. IF E-COMMERCE ({{shop}}):
+         - Product listing with grid/list toggle, search, filtering
+         - Product detail screen with images, variants, add-to-cart
+         - Cart screen with quantity management
+         - Checkout flow with payment integration ({{payments}})
+         - Order history screen
+         - Define required API configuration in a config class
+
+      6. .env.example or lib/core/config.dart with ALL needed configuration:
+         - API base URL
+         - Payment provider keys
+         - Firebase config (if used)
+         Each config must have a comment explaining where to get the value
+
+      7. README.md with setup instructions, required accounts, architecture overview
+
+      IMPORTANT: Use features appropriate for the detected Dart/Flutter version.
+
+      THREE RULES:
+      1. DESIGN FOR THE USER. Ask what the app does and who uses it before choosing colors or theme.
+         Light themes for most apps. Design for the user, not for developers.
+      2. USE THE APP IN YOUR HEAD. Tap every button, navigate every screen, go back, rotate the phone.
+         Does every screen handle loading, empty, and error states? Is everything tappable (44px min)?
+      3. VERIFY BEFORE YOU USE. Before referencing any route, provider, model field, or package —
+         read the source file where it's defined. Never assume names from memory.
+    prompt_version: "1"
+
+  - id: tests
+    name: "[3/5] Generating tests"
+    complexity: medium
+    timeout: 600
+    skippable: true
+    dependencies:
+      - scaffold
+    prompt: |
+      Create Flutter/Dart tests for this project. Read the project first.
+
+      test/ directory:
+      1. Widget tests — test that key screens render without errors, test user interactions
+      2. Unit tests — test providers/services, data models, business logic
+      3. IF e-commerce: test cart operations, price calculations, order creation
+
+      Use flutter_test and mocktail for mocking.
+      IMPORTANT: Write ONLY tests that will PASS with the current codebase.
+    prompt_version: "1"
+
+  - id: tests_fixed
+    name: "[4/5] Running and fixing tests"
+    complexity: medium
+    timeout: 600
+    skippable: true
+    dependencies:
+      - tests
+    prompt: |
+      Run the project tests with: flutter test
+      If any tests fail, analyze the output and fix either the test or the code.
+      Do NOT delete tests — fix them.
+    prompt_version: "1"
+
+  - id: setup_md
+    name: "[5/5] Generating setup instructions"
+    complexity: simple
+    timeout: 600
+    skippable: true
+    dependencies:
+      - tests_fixed
+    prompt: |
+      Read the entire project you just built. Generate a SETUP.md file in the project root.
+
+      PROJECT: {{description}}
+      E-COMMERCE: {{shop}}
+      PAYMENT PROVIDERS: {{payments}}
+      COUNTRY: {{country}}
+
+      SETUP.md must include:
+
+      1. QUICK START — flutter pub get, flutter run, available platforms
+      2. REQUIRED ACCOUNTS & KEYS — for each service used:
+         - Exact config location (lib/core/config.dart or .env)
+         - What the key is, WHERE to get it (with URL to dashboard)
+         - Test/sandbox values if available
+      3. FIREBASE SETUP (if used):
+         - Create Firebase project steps
+         - Download google-services.json / GoogleService-Info.plist
+         - Enable required services (Auth, Firestore, etc.)
+      4. PAYMENT PROVIDER SETUP (if e-commerce) — for EACH provider ({{payments}}):
+         - Mobile SDK setup steps (iOS/Android specific config)
+         - Test mode instructions and test card numbers
+         - Production switch checklist
+      5. BUILDING FOR PRODUCTION:
+         - Android: signing, keystore, play store upload
+         - iOS: certificates, provisioning profiles, app store
+         - Web: flutter build web, deployment
+      6. ARCHITECTURE OVERVIEW — folder structure, state management pattern, data flow
+      7. COMMON TASKS — how to add a new screen, feature, API endpoint integration
+
+      Write for a JUNIOR developer. Explain mobile-specific concepts briefly.
+    prompt_version: "1"
+    gates:
+      - type: exists_any
+        severity: soft
+        patterns:
+          - SETUP.md

@@ -4,22 +4,22 @@ declare(strict_types=1);
 
 namespace Tessera\Installer\Stacks;
 
-use Tessera\Installer\Complexity;
 use Tessera\Installer\Console;
 use Tessera\Installer\Memory;
-use Tessera\Installer\StepRunner;
 use Tessera\Installer\SystemInfo;
 use Tessera\Installer\ToolRouter;
 
 /**
  * Go stack for high-performance backends.
+ *
+ * Sprint 1 port: scaffold() delegates to YamlStackRunner; the four
+ * heredoc prompts that used to live here are now versioned templates
+ * inside `stacks/go.yaml`. Lifecycle (preflight / postSetup /
+ * completionInfo) stays in PHP per the round-3 consensus on lifecycle
+ * being too quirky to push through YAML in v1.
  */
 final class GoStack implements StackInterface
 {
-    private StepRunner $steps;
-
-    private string $fullPath;
-
     public function name(): string
     {
         return 'go';
@@ -53,224 +53,14 @@ final class GoStack implements StackInterface
 
     public function scaffold(string $directory, array $requirements, ToolRouter $router, SystemInfo $system, Memory $memory): bool
     {
-        $this->fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
-        $this->steps = new StepRunner($router, $this->fullPath);
-
-        $desc = $requirements['description'] ?? 'Go backend';
-        $langs = implode(', ', $requirements['languages'] ?? ['en']);
-        $paymentProviders = $requirements['payment_providers'] ?? [];
-        $payments = ! empty($paymentProviders) ? implode(', ', $paymentProviders) : 'none';
-        $shop = ($requirements['needs_shop'] ?? false) ? 'YES' : 'NO';
-        $country = $requirements['country'] ?? '';
-        $needsRealtime = ($requirements['needs_realtime'] ?? false) ? 'YES' : 'NO';
-        $goVersion = $this->detectVersions();
-        $systemContext = $system->buildAiContext();
-
-        // Check if we're resuming
-        $resuming = is_dir($this->fullPath) && is_file($this->fullPath.'/.tessera/state.json');
-
-        Console::line();
-        if ($resuming) {
-            Console::bold('Resuming build — skipping completed steps...');
-        } else {
-            Console::bold('Building your project — this takes about 5 minutes.');
-        }
-        Console::line();
-
-        if (! @mkdir($this->fullPath, 0755, true) && ! is_dir($this->fullPath)) {
-            Console::error("Could not create directory: {$this->fullPath}");
-
-            return false;
-        }
-
-        if ($memory->hasState()) {
-            $memory->updateContext($requirements, $system->buildAiContext());
-        } else {
-            $memory->init($directory, 'go', $requirements, $system->buildAiContext());
-        }
-
-        // Step 1: AI scaffold — senior dev reasoning
-        if ($memory->isStepDone('scaffold')) {
-            Console::success('[1/4] Creating project structure (already done)');
-        } else {
-            $memory->startStep('scaffold');
-            $this->steps->runAi(
-                name: '[1/4] Creating project structure',
-                complexity: Complexity::COMPLEX,
-                prompt: <<<PROMPT
-You are a SENIOR Go developer building a production-grade project from scratch.
-Think carefully about what THIS specific project needs before writing any code.
-
-{$systemContext}
-
-RUNTIME: {$goVersion}
-PROJECT: {$desc}
-LANGUAGES: {$langs}
-E-COMMERCE: {$shop}
-PAYMENT PROVIDERS: {$payments}
-COUNTRY: {$country}
-REAL-TIME: {$needsRealtime}
-
-STEP 1 — THINK (do not skip):
-- What domain entities does this project need? (Users, Products, Orders, Messages, Devices?)
-- What API endpoints are needed? (CRUD for each entity? Webhooks? WebSocket?)
-- Does it need authentication? (JWT, API keys, OAuth?)
-- Does it need payment processing? Which provider SDKs?
-- Does it need real-time? (WebSocket, SSE, gRPC streaming?)
-- What middleware is needed? (auth, rate limiting, CORS, logging, recovery?)
-
-STEP 2 — CREATE:
-1. go.mod with module name and ALL needed dependencies
-2. Project structure:
-   cmd/server/main.go — entry point with graceful shutdown
-   internal/
-     config/ — configuration from environment variables
-     handler/ — HTTP handlers (one file per domain entity)
-     middleware/ — auth, logging, recovery, CORS
-     model/ — domain models (structs)
-     repository/ — database layer (GORM or sqlc)
-     service/ — business logic layer
-     router/ — route registration
-   migrations/ — SQL migration files
-   pkg/ — shared utilities (if needed)
-
-3. Makefile with: build, run, test, migrate, docker-up, docker-down
-4. Dockerfile (multi-stage build) + docker-compose.yml (app + PostgreSQL)
-5. .env.example with ALL needed environment variables:
-   - Database connection
-   - JWT secret
-   - Payment provider keys (if e-commerce)
-   - Port, log level, environment
-   Each variable must have a descriptive comment and example value
-
-6. IF E-COMMERCE ({$shop}):
-   - Product, Category, Order, OrderItem, Cart models
-   - Payment processing with: {$payments}
-   - Each payment integration must define its required config keys
-   - Webhook handlers for payment notifications
-   - Order lifecycle management (created → paid → shipped → delivered)
-
-7. IF REAL-TIME ({$needsRealtime}):
-   - WebSocket or SSE endpoint
-   - Hub/broker pattern for message distribution
-   - Connection management with timeouts
-
-8. Health check endpoint (/health) and readiness probe (/ready)
-9. Structured logging (slog)
-10. README.md with architecture overview and setup instructions
-
-IMPORTANT: Use modern Go features appropriate for {$goVersion}.
-Use generics, slog, and other modern features if the version supports them.
-
-TWO RULES:
-1. TEST IT IN YOUR HEAD. Trace every request from client to handler to database and back.
-   Does the route exist? Does the handler return the right status code? Does the struct match
-   the migration? If anything doesn't connect — fix it before moving on.
-2. VERIFY BEFORE YOU USE. Before referencing any function, struct field, package, or env var —
-   read the source file where it's defined. Never assume names from memory.
-PROMPT,
-                verify: function (): ?string {
-                    return is_file($this->fullPath.'/go.mod') ? null : 'go.mod not created';
-                },
-                timeout: 600,
-            );
-            $memory->completeStep('scaffold');
-        } // end if !isStepDone('scaffold')
-
-        // Step 2: Generate tests
-        if ($memory->isStepDone('tests')) {
-            Console::success('[2/4] Generating tests (already done)');
-        } else {
-            $memory->startStep('tests');
-            $this->steps->runAi(
-                name: '[2/4] Generating tests',
-                complexity: Complexity::MEDIUM,
-                prompt: <<<'PROMPT'
-Create Go tests for this project. Read the project structure first.
-
-Create _test.go files next to the code they test:
-1. Handler tests — use httptest, test request/response, status codes, validation
-2. Service tests — test business logic with mocked repositories
-3. Repository tests — test database operations (use test helpers)
-4. Integration tests — test full request lifecycle
-5. IF e-commerce: test order creation, payment flow, webhook handling
-
-Use table-driven tests. Use testify/assert for cleaner assertions.
-IMPORTANT: Write ONLY tests that will PASS with the current codebase.
-PROMPT,
-                verify: null,
-                skippable: true,
-                timeout: 300,
-            );
-            $memory->completeStep('tests');
-        } // end if !isStepDone('tests')
-
-        // Step 3: Run tests and fix
-        if ($memory->isStepDone('tests_fixed')) {
-            Console::success('[3/4] Running and fixing tests (already done)');
-        } else {
-            $memory->startStep('tests_fixed');
-            $this->steps->runAi(
-                name: '[3/4] Running and fixing tests',
-                complexity: Complexity::MEDIUM,
-                prompt: <<<'PROMPT'
-Run the project tests with: go test ./...
-If any tests fail, analyze the output and fix either the test or the code.
-Do NOT delete tests — fix them.
-PROMPT,
-                verify: null,
-                skippable: true,
-                timeout: 300,
-            );
-            $memory->completeStep('tests_fixed');
-        } // end if !isStepDone('tests_fixed')
-
-        // Step 4: SETUP.md — developer handoff
-        if ($memory->isStepDone('setup_md')) {
-            Console::success('[4/4] Generating setup instructions (already done)');
-        } else {
-            $memory->startStep('setup_md');
-            $this->steps->runAi(
-                name: '[4/4] Generating setup instructions',
-                complexity: Complexity::SIMPLE,
-                prompt: <<<PROMPT
-Read the entire project you just built. Generate a SETUP.md file in the project root.
-
-PROJECT: {$desc}
-E-COMMERCE: {$shop}
-PAYMENT PROVIDERS: {$payments}
-COUNTRY: {$country}
-
-SETUP.md must include:
-
-1. QUICK START — commands to build and run, default URLs, test with curl examples
-2. ENVIRONMENT VARIABLES — list EVERY .env variable with:
-   - Exact key name, what it is, WHERE to get it (with URL), required vs optional
-   - Example values for development
-3. DATABASE SETUP — PostgreSQL setup, migrations, seed data
-4. DOCKER — how to run with docker-compose (the easy way)
-5. PAYMENT PROVIDER SETUP (if e-commerce) — for EACH provider ({$payments}):
-   - Account creation steps, where to get API keys
-   - Test/sandbox credentials
-   - Webhook URL to configure (exact URL path)
-   - Production switch checklist
-6. API DOCUMENTATION — list all endpoints with method, path, request/response examples
-7. DEPLOYMENT — Docker, systemd, cloud deployment options
-8. PRODUCTION CHECKLIST — security headers, rate limiting, TLS, monitoring, backups
-9. COMMON TASKS — how to add a new endpoint, model, migration
-
-Write for a JUNIOR developer. Explain Go-specific concepts briefly.
-PROMPT,
-                verify: fn (): ?string => is_file($this->fullPath.'/SETUP.md') ? null : 'SETUP.md not created',
-                skippable: true,
-                timeout: 300,
-            );
-            $memory->completeStep('setup_md');
-        } // end if !isStepDone('setup_md')
-
-        $this->steps->printSummary();
-
-        return true;
+        return (new YamlStackRunner)->run(
+            directory: $directory,
+            stackName: 'go',
+            requirements: $requirements,
+            router: $router,
+            system: $system,
+            memory: $memory,
+        );
     }
 
     public function postSetup(string $directory): bool
@@ -296,15 +86,5 @@ PROMPT,
                 'Setup guide' => 'SETUP.md',
             ],
         ];
-    }
-
-    private function detectVersions(): string
-    {
-        $go = Console::execSilent('go version');
-        if ($go['exit'] === 0) {
-            return trim($go['output']);
-        }
-
-        return 'Go (latest)';
     }
 }

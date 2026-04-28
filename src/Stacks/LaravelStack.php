@@ -11,7 +11,6 @@ use Tessera\Installer\DatabaseIdentifier;
 use Tessera\Installer\EnvFile;
 use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Memory;
-use Tessera\Installer\Stacks\Prompts\LaravelPrompts;
 use Tessera\Installer\StepRunner;
 use Tessera\Installer\SystemInfo;
 use Tessera\Installer\ToolRouter;
@@ -178,17 +177,42 @@ final class LaravelStack implements StackInterface
         $actualDb = $this->configureDatabase();
         Console::success("Database configured: {$actualDb}");
 
-        // Step 6: AI builds everything
+        // Step 6: AI builds everything (delegated to the YAML manifest engine).
+        // The 6 prompt steps that used to be inlined here as PHP heredocs now
+        // live in `stacks/laravel.yaml` as versioned templates with explicit
+        // gates, fingerprints, and event tracing — same contract as Static,
+        // Go, Node. Pre-AI shell sequence above stays in PHP because Laravel's
+        // setup is too tool-specific to push through YAML.
         Console::line();
         Console::bold('[6/8] AI is building your project — this is the big one...');
         Console::line('  AI is creating models, theme, admin, content, and tests.');
         Console::line('  This takes a few minutes. Sit tight.');
         Console::line();
-        if (! $this->aiScaffold()) {
+
+        $aiOk = (new YamlStackRunner)->run(
+            directory: $directory,
+            stackName: 'laravel',
+            requirements: $requirements,
+            router: $router,
+            system: $system,
+            memory: $memory,
+        );
+
+        if (! $aiOk) {
             return false;
         }
 
-        // Summary
+        // Step 7: Run-and-fix-tests loop. This is post-manifest because it's
+        // a hybrid — `php artisan test` is shell, but failure responses feed
+        // back into a follow-up AI prompt, retried up to 3 times. That kind
+        // of stateful loop doesn't fit the linear plan model in v1.
+        if (! $this->memory->isStepDone('tests_fixed')) {
+            $this->runAndFixTests();
+            $this->memory->completeStep('tests_fixed');
+        } else {
+            Console::success('AI: Fix failing tests (already done)');
+        }
+
         $this->steps->printSummary();
 
         return true;
@@ -549,372 +573,6 @@ PROMPT,
         return implode(', ', $versions);
     }
 
-    private function aiScaffold(): bool
-    {
-        $desc = $this->requirements['description'] ?? 'Web project';
-        $langs = implode(', ', $this->requirements['languages'] ?? ['en']);
-        $shop = ($this->requirements['needs_shop'] ?? false) ? 'YES' : 'NO';
-        $needsFrontend = ($this->requirements['needs_frontend'] ?? true) ? 'YES' : 'NO';
-        $designStyle = $this->requirements['design_style'] ?? 'modern, clean';
-        $designColors = $this->requirements['design_colors'] ?? 'use appropriate colors for the business type';
-        $paymentProviders = $this->requirements['payment_providers'] ?? [];
-        $payments = ! empty($paymentProviders) ? implode(', ', $paymentProviders) : 'none';
-        $country = $this->requirements['country'] ?? '';
-        $userRequirements = $this->requirements['user_requirements'] ?? '';
-        $stackVersions = $this->detectVersions();
-        $systemContext = $this->system->buildAiContext();
-        $memoryContext = $this->memory->buildAiContext();
-
-        // Step A: Models, migrations, services
-        if ($this->memory->isStepDone('core_models')) {
-            Console::success('Creating database models and services (already done)');
-        } else {
-            $this->memory->startStep('core_models');
-            $this->steps->runAi(
-                name: 'Creating database models and services',
-                complexity: Complexity::COMPLEX,
-                prompt: LaravelPrompts::models($systemContext, $memoryContext, $stackVersions, $desc, $langs, $shop, $payments, $country, $userRequirements),
-                verify: function (): ?string {
-                    if (! is_file($this->fullPath.'/app/Core/Models/Page.php')) {
-                        return 'Page model not created';
-                    }
-                    if (! is_file($this->fullPath.'/app/Core/Services/PageRenderer.php')) {
-                        return 'PageRenderer not created';
-                    }
-                    if (! is_file($this->fullPath.'/app/Core/Http/PageController.php')) {
-                        return 'PageController not created';
-                    }
-                    if (($this->requirements['needs_shop'] ?? false)
-                        && ! is_file($this->fullPath.'/app/Modules/Shop/ShopServiceProvider.php')) {
-                        return 'ShopServiceProvider not created';
-                    }
-
-                    return null;
-                },
-                timeout: $this->aiTimeout,
-            );
-            $this->memory->completeStep('core_models');
-        } // end if !isStepDone('core_models')
-
-        // Step B: Theme views
-        if ($this->memory->isStepDone('theme')) {
-            Console::success('Designing frontend theme and pages (already done)');
-        } else {
-            $this->memory->startStep('theme');
-            $this->steps->runAi(
-                name: 'Designing frontend theme and pages',
-                complexity: Complexity::COMPLEX,
-                prompt: LaravelPrompts::theme($desc, $needsFrontend, $designStyle, $designColors, $langs, $shop, $userRequirements),
-                verify: function (): ?string {
-                    if (! is_file($this->fullPath.'/resources/views/themes/default/layouts/master.blade.php')) {
-                        return 'Master layout not created';
-                    }
-                    if (empty(glob($this->fullPath.'/resources/views/themes/default/blocks/*.blade.php'))) {
-                        return 'No block views created';
-                    }
-                    if (! is_file($this->fullPath.'/resources/views/themes/default/partials/header.blade.php')) {
-                        return 'Header partial not created';
-                    }
-                    if (($this->requirements['needs_shop'] ?? false)
-                        && ! is_file($this->fullPath.'/resources/views/components/layouts/shop.blade.php')) {
-                        return 'Shop layout not created';
-                    }
-
-                    return null;
-                },
-                skippable: true,
-                timeout: $this->aiTimeout,
-            );
-            // Peer review: a different AI checks the theme for UX issues
-            $this->steps->review(
-                stepName: 'frontend theme',
-                reviewPrompt: <<<'REVIEW'
-You are a UX REVIEWER. Read ALL files in resources/views/themes/default/ and resources/css/app.css.
-
-Check for these specific issues and list ONLY actual problems you find:
-- Dark theme used for a business that shouldn't have one (most businesses need light backgrounds)
-- Text invisible against its background (low contrast, same color text and bg)
-- Content only visible on hover (product names, prices — must be visible in default state)
-- Links pointing to pages that don't exist (href="/about" but no /about route or page)
-- Footer links hardcoded instead of coming from Navigation model
-- Form inputs invisible (white inputs on white background)
-- Missing mobile responsiveness (no responsive classes)
-REVIEW,
-                fixPrompt: <<<'FIX'
-A peer reviewer found issues in the frontend theme. Fix ALL of them.
-Read each issue carefully and make the necessary changes to the blade views and CSS.
-Do not break existing functionality — only fix what the reviewer identified.
-FIX,
-            );
-
-            $this->memory->completeStep('theme');
-        } // end if !isStepDone('theme')
-
-        // Step C: Filament resources
-        if ($this->memory->isStepDone('admin')) {
-            Console::success('Building admin panel (already done)');
-        } else {
-            $this->memory->startStep('admin');
-            $this->steps->runAi(
-                name: 'Building admin panel',
-                complexity: Complexity::COMPLEX,
-                prompt: LaravelPrompts::admin($desc, $shop),
-                verify: function (): ?string {
-                    // Check for any Resource file in Filament dir
-                    $dir = $this->fullPath.'/app/Filament/Resources';
-
-                    if (! is_dir($dir)) {
-                        return 'Filament Resources directory not created';
-                    }
-
-                    $files = glob($dir.'/*.php');
-                    if (empty($files)) {
-                        return 'No Filament resources created';
-                    }
-
-                    // Check PageResource specifically (it's the most important)
-                    if (! is_file($dir.'/PageResource.php')) {
-                        return 'PageResource not created';
-                    }
-
-                    // Check CLAUDE.md was created
-                    if (! is_file($this->fullPath.'/CLAUDE.md')) {
-                        return 'CLAUDE.md not created';
-                    }
-
-                    return null;
-                },
-                skippable: true,
-                timeout: $this->aiTimeout,
-            );
-            $this->memory->completeStep('admin');
-
-            // Auto-fix Filament namespaces (version-agnostic, reads vendor/)
-            $this->fixFilamentNamespaces();
-
-            // Peer review: verify admin resources match models and theme
-            $this->steps->review(
-                stepName: 'admin panel',
-                reviewPrompt: <<<'REVIEW'
-You are a CODE REVIEWER. Read the Filament resources in app/Filament/Resources/.
-
-Check for these specific issues:
-- Resource references a model that doesn't exist in app/ (read the model files)
-- Table column names don't match actual migration column names (read migrations)
-- PageResource Builder block fields don't match blade view data keys
-  (read resources/views/themes/default/blocks/*.blade.php and compare)
-- Wrong Filament class imports (verify each use statement resolves to a real class)
-- Missing relationships referenced in resource (verify they exist on the model)
-REVIEW,
-                fixPrompt: <<<'FIX'
-A peer reviewer found issues in the Filament admin resources. Fix ALL of them.
-Read each issue carefully. Verify against the actual source files before making changes.
-FIX,
-            );
-
-            // PHP lint — catch syntax errors before continuing
-            $this->lintPhpFiles();
-        } // end if !isStepDone('admin')
-
-        // Step D: Content & pages
-        if ($this->memory->isStepDone('content')) {
-            Console::success('Writing content and seeding data (already done)');
-        } else {
-            $this->memory->startStep('content');
-            $this->steps->runAi(
-                name: 'Writing content and seeding data',
-                complexity: Complexity::MEDIUM,
-                prompt: LaravelPrompts::content($desc, $langs, $shop),
-                verify: function (): ?string {
-                    $result = Console::execSilent(
-                        'php artisan tinker --execute="echo App\\Core\\Models\\Page::count();"',
-                        $this->fullPath,
-                    );
-
-                    $count = (int) trim($result['output']);
-
-                    return $count > 0 ? null : 'No pages created by seeder';
-                },
-                skippable: true,
-                timeout: $this->aiTimeout,
-            );
-            $this->memory->completeStep('content');
-
-            // Post-content verification: check routes and lint
-            $this->verifyRoutes();
-            $this->lintPhpFiles();
-        } // end if !isStepDone('content')
-
-        // Step E: Generate tests
-        if ($this->memory->isStepDone('tests')) {
-            Console::success('AI: Generate tests (already done)');
-        } else {
-            $this->memory->startStep('tests');
-            $this->steps->runAi(
-                name: 'AI: Generate tests',
-                complexity: Complexity::MEDIUM,
-                prompt: <<<'PROMPT'
-CONTINUE working on the Tessera project. Models, views, admin, and content are all created.
-
-Generate PHPUnit tests in tests/Feature/. Use PHPUnit class-based syntax (NOT Pest function syntax).
-Each test class must extend Tests\TestCase and use Illuminate\Foundation\Testing\RefreshDatabase.
-
-1. ROUTE TESTS (tests/Feature/RouteTest.php):
-   - Homepage (/) returns 200
-   - Each seeded page returns 200 (about, contact, faq, etc.)
-   - /admin redirects to login
-   - /admin/login returns 200
-   - Non-existent page returns 404
-
-2. URL INTEGRITY TESTS (tests/Feature/NavigationUrlTest.php):
-   THIS IS CRITICAL — it catches broken links before the user ever sees them.
-   After seeding:
-   - Load ALL navigation items from the database
-   - For EACH navigation URL, make a GET request and assert it returns 200 (not 404, not 500)
-   - This ensures every link in the header/footer actually works
-   - Also test that locale switching works: request with ?lang= parameter, verify
-     the response is 200 and the session locale was updated
-
-3. MODEL TESTS (tests/Feature/ModelTest.php):
-   - Page can be created with required fields
-   - Page has blocks relationship
-   - Block belongs to page
-   - Navigation can be created
-   - Navigation scopes (header, footer) work
-
-4. SERVICE TESTS (tests/Feature/ServiceTest.php):
-   - PageRenderer resolves page by slug
-   - BlockRegistry returns correct view path for known block type
-   - ThemeManager returns active theme name
-
-5. SEEDER TEST (tests/Feature/SeederTest.php):
-   - DatabaseSeeder creates expected pages
-   - DatabaseSeeder creates navigation items
-   - Pages have blocks after seeding
-
-6. ADMIN TESTS (tests/Feature/AdminTest.php):
-   - Each Filament resource list page loads without errors (no "Class not found")
-   - Creating a record through the admin doesn't show raw JSON in form fields
-
-Use RefreshDatabase trait. Configure phpunit.xml to use SQLite in-memory (:memory:) for tests
-regardless of what database the application uses — tests must be fast and isolated.
-
-IMPORTANT:
-- Write ONLY tests that will PASS with the current codebase. Do NOT test features that don't exist yet.
-- The URL integrity test is the most important — it proves the site actually works end-to-end.
-- Use PHPUnit class syntax: class RouteTest extends TestCase { public function test_homepage(): void { } }
-  Do NOT use Pest syntax (test(), it(), describe(), etc.) — this project uses PHPUnit.
-- If any models use MySQL-specific features, ensure tests still work on SQLite :memory:.
-  Common SQLite incompatibilities: ENUM columns (use string), json_extract (works differently),
-  unsigned bigint (use regular bigint). Use Laravel's column types which abstract these.
-PROMPT,
-                verify: function (): ?string {
-                    $dir = $this->fullPath.'/tests/Feature';
-                    if (! is_dir($dir)) {
-                        return 'tests/Feature directory not found';
-                    }
-
-                    $files = glob($dir.'/*Test.php');
-
-                    return ! empty($files) ? null : 'No test files created';
-                },
-                skippable: true,
-                timeout: $this->aiTimeout,
-            );
-            $this->memory->completeStep('tests');
-        } // end if !isStepDone('tests')
-
-        // Step F: Run tests and fix failures
-        if (! $this->memory->isStepDone('tests_fixed')) {
-            $this->runAndFixTests();
-            $this->memory->completeStep('tests_fixed');
-        } else {
-            Console::success('AI: Fix failing tests (already done)');
-        }
-
-        // Step G: Generate developer handoff — SETUP.md with what the dev needs to do
-        if ($this->memory->isStepDone('setup_md')) {
-            Console::success('Generating setup instructions for developer (already done)');
-        } else {
-            $this->memory->startStep('setup_md');
-            $this->steps->runAi(
-                name: 'Generating setup instructions for developer',
-                complexity: Complexity::SIMPLE,
-                prompt: <<<PROMPT
-FINAL STEP. Read the entire project you just built. Generate a SETUP.md file in the project root.
-
-This file is for the DEVELOPER (junior). It must tell them EXACTLY what they need to do
-to make this project fully operational. Be specific — include URLs, dashboard links, exact .env key names.
-
-PROJECT: {$desc}
-E-COMMERCE: {$shop}
-PAYMENT PROVIDERS: {$payments}
-COUNTRY: {$country}
-
-SETUP.md must include:
-
-1. QUICK START
-   - Commands to run (migrate, seed, serve)
-   - Default admin login credentials
-   - URLs (site, admin panel)
-
-2. ENVIRONMENT VARIABLES TO CONFIGURE
-   List EVERY .env variable that needs a real value. For each one:
-   - The exact key name (e.g., STRIPE_SECRET_KEY)
-   - What it is (e.g., "Your Stripe secret API key")
-   - WHERE to get it (e.g., "Go to https://dashboard.stripe.com/apikeys → Secret key")
-   - Whether it's required or optional
-   - Example test/sandbox value if available
-
-3. PAYMENT PROVIDER SETUP (if e-commerce)
-   For EACH payment provider ({$payments}):
-   - Step-by-step account setup instructions
-   - Where to get API keys / credentials
-   - Test/sandbox mode instructions (test card numbers, test credentials)
-   - Webhook URL to configure (the exact URL: https://yourdomain.com/webhooks/stripe etc.)
-   - What to do when going to production (switch keys, verify domain, etc.)
-
-4. EMAIL CONFIGURATION
-   - Which email provider to use (Mailtrap for dev, real SMTP for production)
-   - .env keys: MAIL_HOST, MAIL_PORT, MAIL_USERNAME, etc.
-
-5. MEDIA / STORAGE
-   - How Curator handles uploads
-   - Storage link command if needed (php artisan storage:link)
-   - Production: S3 configuration if scaling
-
-6. GOING TO PRODUCTION CHECKLIST
-   - [ ] Set APP_ENV=production, APP_DEBUG=false
-   - [ ] Configure real database (MySQL/PostgreSQL)
-   - [ ] Set up real email (not Mailtrap)
-   - [ ] Switch payment providers to live mode
-   - [ ] Set APP_URL to real domain
-   - [ ] Run: php artisan config:cache && route:cache && view:cache
-   - [ ] Set up SSL certificate
-   - [ ] Configure backups
-
-7. ADMIN MANAGEMENT (if e-commerce)
-   - Explain that ALL business settings are managed through the admin panel
-   - No code or config file changes are needed for day-to-day operations
-
-8. COMMON TASKS
-   - How to add a new page (admin panel)
-   - How to add a new block type (create blade view + add to BlockRegistry + add to PageResource builder)
-   - How to change the theme/colors
-   - How to add a new language
-
-Write in CLEAR, simple language. The developer is a junior — don't assume they know
-what a webhook is. Explain briefly when needed.
-PROMPT,
-                verify: fn (): ?string => is_file($this->fullPath.'/SETUP.md') ? null : 'SETUP.md not created',
-                skippable: true,
-                timeout: $this->aiTimeout,
-            );
-            $this->memory->completeStep('setup_md');
-        } // end if !isStepDone('setup_md')
-
-        return true;
-    }
 
     /**
      * Create the TranslatableFields helper class in the scaffolded project.

@@ -1,0 +1,165 @@
+name: go
+label: "Go (Backend / API / Microservice)"
+description: "High-performance API servers, microservices, CLI tools, real-time systems. Stack: Go (latest), Chi/Gin router, sqlc/GORM, PostgreSQL, Docker."
+manifest_version: "1"
+
+requires:
+  - go
+
+steps:
+  - id: scaffold
+    name: "[1/4] Creating project structure"
+    complexity: complex
+    timeout: 1200
+    prompt: |
+      You are a SENIOR Go developer building a production-grade project from scratch.
+      Think carefully about what THIS specific project needs before writing any code.
+
+      {{systemContext}}
+
+      RUNTIME: {{goVersion}}
+      PROJECT: {{description}}
+      LANGUAGES: {{langs}}
+      E-COMMERCE: {{shop}}
+      PAYMENT PROVIDERS: {{payments}}
+      COUNTRY: {{country}}
+      REAL-TIME: {{needsRealtime}}
+
+      STEP 1 — THINK (do not skip):
+      - What domain entities does this project need? (Users, Products, Orders, Messages, Devices?)
+      - What API endpoints are needed? (CRUD for each entity? Webhooks? WebSocket?)
+      - Does it need authentication? (JWT, API keys, OAuth?)
+      - Does it need payment processing? Which provider SDKs?
+      - Does it need real-time? (WebSocket, SSE, gRPC streaming?)
+      - What middleware is needed? (auth, rate limiting, CORS, logging, recovery?)
+
+      STEP 2 — CREATE:
+      1. go.mod with module name and ALL needed dependencies
+      2. Project structure:
+         cmd/server/main.go — entry point with graceful shutdown
+         internal/
+           config/ — configuration from environment variables
+           handler/ — HTTP handlers (one file per domain entity)
+           middleware/ — auth, logging, recovery, CORS
+           model/ — domain models (structs)
+           repository/ — database layer (GORM or sqlc)
+           service/ — business logic layer
+           router/ — route registration
+         migrations/ — SQL migration files
+         pkg/ — shared utilities (if needed)
+
+      3. Makefile with: build, run, test, migrate, docker-up, docker-down
+      4. Dockerfile (multi-stage build) + docker-compose.yml (app + PostgreSQL)
+      5. .env.example with ALL needed environment variables:
+         - Database connection
+         - JWT secret
+         - Payment provider keys (if e-commerce)
+         - Port, log level, environment
+         Each variable must have a descriptive comment and example value
+
+      6. IF E-COMMERCE ({{shop}}):
+         - Product, Category, Order, OrderItem, Cart models
+         - Payment processing with: {{payments}}
+         - Each payment integration must define its required config keys
+         - Webhook handlers for payment notifications
+         - Order lifecycle management (created → paid → shipped → delivered)
+
+      7. IF REAL-TIME ({{needsRealtime}}):
+         - WebSocket or SSE endpoint
+         - Hub/broker pattern for message distribution
+         - Connection management with timeouts
+
+      8. Health check endpoint (/health) and readiness probe (/ready)
+      9. Structured logging (slog)
+      10. README.md with architecture overview and setup instructions
+
+      IMPORTANT: Use modern Go features appropriate for {{goVersion}}.
+      Use generics, slog, and other modern features if the version supports them.
+
+      TWO RULES:
+      1. TEST IT IN YOUR HEAD. Trace every request from client to handler to database and back.
+         Does the route exist? Does the handler return the right status code? Does the struct match
+         the migration? If anything doesn't connect — fix it before moving on.
+      2. VERIFY BEFORE YOU USE. Before referencing any function, struct field, package, or env var —
+         read the source file where it's defined. Never assume names from memory.
+    prompt_version: "1"
+    gates:
+      - type: exists_any
+        severity: hard
+        patterns:
+          - go.mod
+
+  - id: tests
+    name: "[2/4] Generating tests"
+    complexity: medium
+    timeout: 600
+    skippable: true
+    dependencies:
+      - scaffold
+    prompt: |
+      Create Go tests for this project. Read the project structure first.
+
+      Create _test.go files next to the code they test:
+      1. Handler tests — use httptest, test request/response, status codes, validation
+      2. Service tests — test business logic with mocked repositories
+      3. Repository tests — test database operations (use test helpers)
+      4. Integration tests — test full request lifecycle
+      5. IF e-commerce: test order creation, payment flow, webhook handling
+
+      Use table-driven tests. Use testify/assert for cleaner assertions.
+      IMPORTANT: Write ONLY tests that will PASS with the current codebase.
+    prompt_version: "1"
+
+  - id: tests_fixed
+    name: "[3/4] Running and fixing tests"
+    complexity: medium
+    timeout: 600
+    skippable: true
+    dependencies:
+      - tests
+    prompt: |
+      Run the project tests with: go test ./...
+      If any tests fail, analyze the output and fix either the test or the code.
+      Do NOT delete tests — fix them.
+    prompt_version: "1"
+
+  - id: setup_md
+    name: "[4/4] Generating setup instructions"
+    complexity: simple
+    timeout: 300
+    skippable: true
+    dependencies:
+      - tests_fixed
+    prompt: |
+      Read the entire project you just built. Generate a SETUP.md file in the project root.
+
+      PROJECT: {{description}}
+      E-COMMERCE: {{shop}}
+      PAYMENT PROVIDERS: {{payments}}
+      COUNTRY: {{country}}
+
+      SETUP.md must include:
+
+      1. QUICK START — commands to build and run, default URLs, test with curl examples
+      2. ENVIRONMENT VARIABLES — list EVERY .env variable with:
+         - Exact key name, what it is, WHERE to get it (with URL), required vs optional
+         - Example values for development
+      3. DATABASE SETUP — PostgreSQL setup, migrations, seed data
+      4. DOCKER — how to run with docker-compose (the easy way)
+      5. PAYMENT PROVIDER SETUP (if e-commerce) — for EACH provider ({{payments}}):
+         - Account creation steps, where to get API keys
+         - Test/sandbox credentials
+         - Webhook URL to configure (exact URL path)
+         - Production switch checklist
+      6. API DOCUMENTATION — list all endpoints with method, path, request/response examples
+      7. DEPLOYMENT — Docker, systemd, cloud deployment options
+      8. PRODUCTION CHECKLIST — security headers, rate limiting, TLS, monitoring, backups
+      9. COMMON TASKS — how to add a new endpoint, model, migration
+
+      Write for a JUNIOR developer. Explain Go-specific concepts briefly.
+    prompt_version: "1"
+    gates:
+      - type: exists_any
+        severity: soft
+        patterns:
+          - SETUP.md
