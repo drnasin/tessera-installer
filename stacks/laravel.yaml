@@ -383,6 +383,7 @@ steps:
     name: "Writing content and seeding data"
     complexity: medium
     timeout: 1500
+    skippable: true
     dependencies:
       - admin
     prompt: |
