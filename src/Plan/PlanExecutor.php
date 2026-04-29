@@ -206,6 +206,46 @@ final class PlanExecutor
         // Adapter call complete. Now evaluate gates.
         $gateResults = $this->gateEvaluator->evaluate($step->id, $step->gates, $workingDir);
         $hardFailure = $this->firstHardFailure($gateResults);
+        $hardGateCount = count(array_filter(
+            $gateResults,
+            fn (GateResult $g): bool => $g->severity === GateResult::SEVERITY_HARD,
+        ));
+
+        // Special case: timeout (exit 124) but every hard gate passed.
+        // Real-world failure mode discovered during the wine-shop smoke run:
+        // Claude Code finished writing all promised files, but the long-running
+        // subprocess + Windows pipe-handle behaviour kept proc_close alive past
+        // our timeout. The adapter returns exit 124 because we *did* hit the
+        // budget; the gate engine confirms the artifacts the AI promised are
+        // genuinely on disk. Without this branch, resume loops forever (every
+        // re-run would re-fail the same way). Tagged failure_reason will land
+        // in Sprint 2 alongside the wider error-classification work.
+        $isTimeoutWithGatesPassed = ! $response->success
+            && $response->exitCode === 124
+            && $hardFailure === null
+            && $hardGateCount > 0;
+
+        if ($isTimeoutWithGatesPassed) {
+            $this->memory?->completeStep($step->id);
+
+            $this->eventLog->emit(EventType::StepComplete, [
+                'step_id' => $step->id,
+                'adapter' => $adapter->name(),
+                'duration_ms' => $duration,
+                'output_size' => strlen($response->output),
+                'gates_evaluated' => count($gateResults),
+                'gates_passed' => count(array_filter($gateResults, fn (GateResult $g): bool => $g->passed)),
+                'warning' => 'Adapter hit timeout, but every hard gate passed — files were written before the budget expired.',
+            ]);
+
+            return StepResult::success(
+                stepId: $step->id,
+                response: $response,
+                adapterUsed: $adapter->name(),
+                modelUsed: $resolvedModel,
+                durationMs: $duration,
+            );
+        }
 
         if (! $response->success || $hardFailure !== null) {
             $errorMessage = $hardFailure !== null

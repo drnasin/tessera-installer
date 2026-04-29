@@ -229,6 +229,75 @@ final class PlanExecutorTest extends TestCase
     }
 
     #[Test]
+    public function timeout_with_all_hard_gates_passing_treated_as_success(): void
+    {
+        // Real-world failure mode: Claude finished writing all promised files,
+        // but the long-running subprocess kept proc_close alive past our
+        // budget. Adapter returns exit 124 (timeout) but the hard gate finds
+        // every required file on disk. Without this branch, resume loops.
+        $marker = $this->tmpDir.'/marker.txt';
+        @file_put_contents($marker, 'AI wrote me before timeout');
+
+        $adapter = $this->fakeAdapter('fake', fn (): AiResponse => new AiResponse(
+            success: false,
+            output: '',
+            error: 'Timeout after 1s',
+            exitCode: 124,
+        ));
+
+        $executor = $this->makeExecutor($adapter);
+        $plan = (new PlanCompiler)->compile('test', [
+            PlanStep::build(
+                'a',
+                'A',
+                Complexity::SIMPLE,
+                'body',
+                adapterHint: 'fake',
+                gates: [['type' => 'exists_all', 'severity' => 'hard', 'paths' => ['marker.txt']]],
+            ),
+        ]);
+
+        $result = $executor->execute($plan, $this->tmpDir, new RenderContext);
+
+        @unlink($marker);
+
+        $this->assertTrue($result->success, 'Build should succeed when timeout is overridden by gate-pass.');
+        $this->assertCount(1, $result->completedSteps());
+        $this->assertCount(0, $result->failedSteps());
+
+        $events = $this->readEvents();
+        $stepCompletes = array_filter($events, fn ($e) => $e['type'] === 'step.complete');
+        $this->assertCount(1, $stepCompletes);
+
+        $completion = array_values($stepCompletes)[0];
+        $this->assertArrayHasKey('warning', $completion['payload']);
+        $this->assertStringContainsString('hit timeout', $completion['payload']['warning']);
+    }
+
+    #[Test]
+    public function timeout_without_hard_gates_remains_a_failure(): void
+    {
+        // Sanity check: the special case requires *at least one* hard gate
+        // to have passed. A timeout with no gates declared should still fail.
+        $adapter = $this->fakeAdapter('fake', fn (): AiResponse => new AiResponse(
+            success: false,
+            output: '',
+            error: 'Timeout after 1s',
+            exitCode: 124,
+        ));
+
+        $executor = $this->makeExecutor($adapter);
+        $plan = (new PlanCompiler)->compile('test', [
+            PlanStep::build('a', 'A', Complexity::SIMPLE, 'body', adapterHint: 'fake'),
+        ]);
+
+        $result = $executor->execute($plan, $this->tmpDir, new RenderContext);
+
+        $this->assertFalse($result->success);
+        $this->assertCount(1, $result->failedSteps());
+    }
+
+    #[Test]
     public function fail_loud_when_template_references_unknown_var(): void
     {
         $adapter = $this->fakeAdapter('fake', fn () => new AiResponse(true, 'ok'));
