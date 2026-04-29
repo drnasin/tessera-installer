@@ -5,13 +5,46 @@ All notable changes to Tessera Installer are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.11.0] – 2026-04-29
 
 The Sprint 1 architecture re-platform: every stack now runs through a versioned YAML
 manifest, every AI call is fingerprinted and logged, and timeouts release control on
 every supported OS. Public CLI surface stays compatible — `tessera new my-thing` works
 exactly as before — but everything underneath has been rebuilt around an inspectable
 plan.
+
+**Release-validated** by two real-AI smoke runs: a 9m 39s static site (Pekarnica
+Ognjište) and a 5-resume-cycle Laravel + Filament + e-commerce build (Vinarija Split).
+Both projects ship with full event traces, hash-anchored plans, and gate-verified
+outputs. See lessons learned below.
+
+### Lessons learned from Laravel smoke (drove the late Sprint 1 fixes)
+
+The wine-shop run uncovered three failure modes that the original engine couldn't
+handle. All three are now covered by tests and patterns documented for Sprint 2.
+
+- **Gate-pass overrides non-zero exit.** Twice the AI finished writing every file the
+  step's hard gate required — but the subprocess returned non-zero (timeout once,
+  rate-limit-mid-stream once) and the step failed. Without an override, resume looped
+  forever. `PlanExecutor` now treats a non-success exit + every declared hard gate
+  passed as success-with-warning, with the exit code recorded in the event payload.
+  Two regression tests cover both flavours. Sprint 2's typed `failureReason` enum
+  will replace this string heuristic.
+- **Enrichment steps must be skippable on free tier.** The `content` step (Sonnet,
+  no gates, not skippable) hit the rate cap at 3.7 seconds and halted a 25-minute
+  build that already had a working scaffold. Realigned the Laravel manifest with
+  the rest of the stacks (Static / Go / Node / Flutter all mark enrichment steps
+  skippable). Going forward, every enrichment step that hits a free-tier rate cap
+  should declare `skippable: true`.
+- **Complex Laravel scaffold needs 60-min budget, not 40.** Initial budget of 2400s
+  was too tight for Opus + e-commerce + 12 packages. Bumped `core_models`, `theme`,
+  `admin` to 3600s. Real wall-time on the smoke run: scaffold ~30 min for resume
+  attempt, theme 7m 24s, admin 15m 30s.
+
+The smoke also surfaced a positive: the `runAndFixTests` post-yaml hook caught a
+PHPUnit 12 / Laravel test runner incompatibility (`--no-interaction` flag mismatch)
+and the AI **wrote a bash wrapper script (`run-tests.sh`) to work around it** without
+human prompting. Self-healing tests work as designed.
 
 ### Added
 
