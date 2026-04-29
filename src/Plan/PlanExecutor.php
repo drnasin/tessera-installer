@@ -211,21 +211,36 @@ final class PlanExecutor
             fn (GateResult $g): bool => $g->severity === GateResult::SEVERITY_HARD,
         ));
 
-        // Special case: timeout (exit 124) but every hard gate passed.
-        // Real-world failure mode discovered during the wine-shop smoke run:
-        // Claude Code finished writing all promised files, but the long-running
-        // subprocess + Windows pipe-handle behaviour kept proc_close alive past
-        // our timeout. The adapter returns exit 124 because we *did* hit the
-        // budget; the gate engine confirms the artifacts the AI promised are
-        // genuinely on disk. Without this branch, resume loops forever (every
-        // re-run would re-fail the same way). Tagged failure_reason will land
-        // in Sprint 2 alongside the wider error-classification work.
-        $isTimeoutWithGatesPassed = ! $response->success
-            && $response->exitCode === 124
-            && $hardFailure === null
-            && $hardGateCount > 0;
+        // Special case: adapter returned non-zero, but every declared hard
+        // gate passed. The wine-shop smoke run hit two flavours of this:
+        //
+        //   - exit 124 (timeout): Claude finished writing every file the
+        //     gate required, but the long-running subprocess kept Windows'
+        //     proc_close alive past our budget.
+        //   - exit 1 (mid-stream error): Claude ran for 12 minutes, wrote
+        //     the files the admin step needed, then bailed with no error
+        //     message — likely a free-tier rate cap hitting just after the
+        //     real work was done.
+        //
+        // In both cases the gate engine independently confirms the artefacts
+        // are on disk. The gate is the contract; the exit code is a
+        // technical signal that may or may not reflect the actual outcome.
+        // Without this branch, resume loops forever — every retry hits the
+        // same rate cap or pipe-handle ceiling.
+        //
+        // Note: this is intentionally conservative. The override only fires
+        // when a hard gate is *declared and passed*. A step with no hard
+        // gates still fails on a non-zero exit. Sprint 2's typed
+        // failure_reason enum will replace this string heuristic with
+        // something the executor can act on directly.
+        $hasNonSuccessExit = ! $response->success;
+        $allDeclaredHardGatesPassed = $hardFailure === null && $hardGateCount > 0;
 
-        if ($isTimeoutWithGatesPassed) {
+        if ($hasNonSuccessExit && $allDeclaredHardGatesPassed) {
+            $reasonLabel = $response->exitCode === 124
+                ? 'timeout'
+                : 'non-zero exit ('.$response->exitCode.')';
+
             $this->memory?->completeStep($step->id);
 
             $this->eventLog->emit(EventType::StepComplete, [
@@ -235,7 +250,8 @@ final class PlanExecutor
                 'output_size' => strlen($response->output),
                 'gates_evaluated' => count($gateResults),
                 'gates_passed' => count(array_filter($gateResults, fn (GateResult $g): bool => $g->passed)),
-                'warning' => 'Adapter hit timeout, but every hard gate passed — files were written before the budget expired.',
+                'warning' => "Adapter returned {$reasonLabel}, but every hard gate passed — required artefacts are on disk.",
+                'exit_code' => $response->exitCode,
             ]);
 
             return StepResult::success(

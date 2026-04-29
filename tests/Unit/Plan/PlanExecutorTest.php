@@ -271,7 +271,52 @@ final class PlanExecutorTest extends TestCase
 
         $completion = array_values($stepCompletes)[0];
         $this->assertArrayHasKey('warning', $completion['payload']);
-        $this->assertStringContainsString('hit timeout', $completion['payload']['warning']);
+        $this->assertStringContainsString('timeout', $completion['payload']['warning']);
+        $this->assertSame(124, $completion['payload']['exit_code']);
+    }
+
+    #[Test]
+    public function generic_nonzero_exit_with_all_hard_gates_passing_treated_as_success(): void
+    {
+        // The other half of the override: non-zero exit that is NOT a
+        // timeout. The wine-shop admin step hit this — Claude exited 1
+        // mid-stream after writing all required files (likely a free-tier
+        // rate cap firing late in the run). Gate is truth; exit code is a
+        // signal that may or may not reflect the actual outcome.
+        $marker = $this->tmpDir.'/admin-marker.php';
+        @file_put_contents($marker, '<?php // admin file from before the rate cap');
+
+        $adapter = $this->fakeAdapter('fake', fn (): AiResponse => new AiResponse(
+            success: false,
+            output: '',
+            error: '',
+            exitCode: 1,
+        ));
+
+        $executor = $this->makeExecutor($adapter);
+        $plan = (new PlanCompiler)->compile('test', [
+            PlanStep::build(
+                'a',
+                'A',
+                Complexity::SIMPLE,
+                'body',
+                adapterHint: 'fake',
+                gates: [['type' => 'exists_any', 'severity' => 'hard', 'patterns' => ['admin-marker.php']]],
+            ),
+        ]);
+
+        $result = $executor->execute($plan, $this->tmpDir, new RenderContext);
+
+        @unlink($marker);
+
+        $this->assertTrue($result->success);
+        $this->assertCount(1, $result->completedSteps());
+
+        $events = $this->readEvents();
+        $stepCompletes = array_filter($events, fn ($e) => $e['type'] === 'step.complete');
+        $completion = array_values($stepCompletes)[0];
+        $this->assertArrayHasKey('warning', $completion['payload']);
+        $this->assertStringContainsString('non-zero exit (1)', $completion['payload']['warning']);
     }
 
     #[Test]
