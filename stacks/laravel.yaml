@@ -366,12 +366,83 @@ steps:
       - If you're unsure whether the admin needs a particular feature — they do.
         A good admin panel is COMPLETE. The admin should never need to touch code or config files.
 
+      POLYMORPHIC BLOCK BUILDER — non-negotiable principles:
+      The PageResource builds blocks of many types into one shared `Block::data` JSON column.
+      Different block-type Sections legitimately want the same logical key (`heading`, `body`,
+      `cta_url`, `image`). If you let two Sections register the same Filament form path
+      (e.g. both write `Forms\Components\TextInput::make('data.heading')`), Filament collapses
+      them onto a single state path. The LAST-registered Section wins on dehydrate; an
+      INVISIBLE Section's empty state silently nukes the visible Section's value on save.
+      You will not see this in passive testing — you have to save a block and reload it.
+
+      Apply these principles every time:
+
+      1. NAMESPACE FORM PATHS BY BLOCK TYPE. Every block-type field path MUST include the
+         block type as a prefix. Translatable: `data.{type}_{key}_{locale}`. Scalar:
+         `data.{type}_{key}`. Two Sections must NEVER register the same form path.
+
+      2. STORAGE STAYS CANONICAL. Persist as `data.{key}` (scalar) or `data.{key}.{locale}`
+         (locale-keyed array). The form-shape ↔ storage-shape conversion lives in
+         `mutateRelationshipDataBeforeFillUsing` (storage → form: explode by adding the
+         `{type}_` prefix) and `mutateRelationshipDataBeforeSaveUsing` +
+         `…BeforeCreateUsing` (form → storage: strip prefix, rebuild canonical shape).
+
+      3. EACH BLOCK DECLARES ITS OWN STORAGE KEYS alongside its form schema. Do not maintain
+         a god-object allowlist disconnected from where the schema lives. The save-side
+         filter (which keys are accepted for this block type) and the form-side schema
+         (which fields render for this block type) MUST derive from the same single
+         source. Adding a new block field is a one-place change.
+
+      4. UNKNOWN PREFIXED KEYS AT SAVE TIME — fail loudly in development, never silently.
+         If `mutateRelationshipDataBeforeSaveUsing` receives keys that no declared block
+         field claims, throw a domain exception when `app.env in ['local','testing']`;
+         in production, drop the key, log a structured warning (page_id, block_id,
+         block_type, dropped_keys, user_id), and surface a Filament admin notification.
+         Never throw mid-transaction in production — the editor would lose every block in
+         the page on a transient parser bug. Never silently passthrough — that's how data
+         loss bugs hide for months.
+
+      5. RICH EDITORS AND PLAIN TEXTAREAS MUST NEVER SHARE A LOGICAL KEY in a polymorphic
+         form. RichEditor mutates state from string to TipTap JSON document on hydration.
+         A Textarea or TextInput targeting the same path then receives the JSON object
+         and the browser renders `[object Object]`. If a rich-text block's body is a
+         RichEditor, store it under a dedicated key like `rich_body`, not `body`.
+
+      6. INTERNAL LINK FIELDS MUST ACCEPT RELATIVE PATHS. Filament's `->url()` validator
+         rejects `/about`, `/products/wines`, etc. — it requires `http(s)://`. Use
+         `->regex('/^(\/[^\s]*|https?:\/\/[^\s]+)$/i')` so the CMS can store internal
+         routes alongside absolute external URLs.
+
+      7. STORAGE DISCRIMINATOR STRINGS ARE CANONICAL — pick one form (always underscores:
+         `two_column`, `rich_text`, `featured_wines`) and stick with it everywhere. Map
+         to the dashed Blade view filename through a registry, not by accepting both
+         variants in the form select. Dual variants in the select pollute the data with
+         drift.
+
+      8. LOCALES MUST HAVE TRANSLATIONS. After installing Curator and any other Filament
+         packages with translation packs, verify that every locale in
+         `config('platform.supported_locales')` has a published vendor pack. If a locale
+         pack does not exist (e.g. `lang/vendor/curator/hr/` is missing), set
+         `app.fallback_locale` to a locale that DOES have a pack — typically `'en'`.
+         Never leave `app.fallback_locale` equal to a locale whose vendor packs are
+         missing; the admin UI will render raw translation keys like
+         `curator::views.picker.button` instead of a button label.
+
+      TEST IT BEFORE YOU FINISH. For any polymorphic Repeater feature you build, walk through:
+      - Create a new block from scratch (no fill phase — defaults must already be namespaced).
+      - Clone an existing block via `->cloneable()`.
+      - Switch a block's type after entering values (old namespaced keys must not leak).
+      - Delete a block and add a new one of the same type at the same position.
+      - Reorder blocks and save.
+      - Save with a hidden-section that has stale non-empty state.
+      - Validation scopes only to the active block type's fields.
+
       TWO RULES:
       1. Before using ANY name (column, relationship, key, class) — READ the source file where it's defined.
          Never assume. Open the migration, model, or blade view and match the exact name.
       2. Test it in your head: open each admin page, click each button, fill each form.
          Does it work? Does it save? Does the data appear on the frontend?
-    prompt_version: "1"
+    prompt_version: "2"
     gates:
       - type: exists_any
         severity: hard
@@ -466,6 +537,13 @@ steps:
          - BlockRegistry returns correct view path for known block type
          - ThemeManager returns active theme name
 
+      4b. CURATOR LOCALE TEST (only if the project uses awcodes/filament-curator):
+         For each locale in config('platform.supported_locales'), assert that
+         lang/vendor/curator/{locale}/views.php exists, OR that
+         config('app.fallback_locale') points to a locale whose curator pack does exist.
+         Failing this assertion means the admin will render raw translation keys
+         (e.g. 'curator::views.picker.button') in the media picker for that locale.
+
       5. SEEDER TEST (tests/Feature/SeederTest.php):
          - DatabaseSeeder creates expected pages
          - DatabaseSeeder creates navigation items
@@ -474,6 +552,20 @@ steps:
       6. ADMIN TESTS (tests/Feature/AdminTest.php):
          - Each Filament resource list page loads without errors (no "Class not found")
          - Creating a record through the admin doesn't show raw JSON in form fields
+
+      7. BLOCK BUILDER ROUND-TRIP TESTS (tests/Feature/PageBlockBuilderTest.php):
+         If the project has a polymorphic block builder (a Filament Repeater on PageResource
+         where each item has a `type` discriminator and shares a JSON `data` column across
+         block types), assert that loading and re-saving the page preserves block data:
+         - For each seeded block type, mount the EditPage via Livewire::test, immediately
+           call ->call('save') with NO field changes, then reload the block and assert
+           the `data` JSON has every key the seeder originally wrote. A polymorphic-form
+           bug (path collision, RichEditor/Textarea sharing a key, missing namespacing)
+           manifests as silently dropped keys on this no-op save — that's the test that
+           catches it.
+         - Also assert that after save, no field on the rendered admin form contains the
+           literal string '[object Object]' (Filament rendered an array as input value)
+           or 'curator::views' (raw translation key — vendor pack missing for a locale).
 
       Use RefreshDatabase trait. Configure phpunit.xml to use SQLite in-memory (:memory:) for tests
       regardless of what database the application uses — tests must be fast and isolated.
@@ -486,7 +578,7 @@ steps:
       - If any models use MySQL-specific features, ensure tests still work on SQLite :memory:.
         Common SQLite incompatibilities: ENUM columns (use string), json_extract (works differently),
         unsigned bigint (use regular bigint). Use Laravel's column types which abstract these.
-    prompt_version: "1"
+    prompt_version: "2"
 
   - id: setup_md
     name: "Generating setup instructions for developer"

@@ -5,6 +5,58 @@ All notable changes to Tessera Installer are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.11.2] – 2026-04-29
+
+Polymorphic block builder hardening, driven by a real bug surfaced in the
+`v3.11.0` Vinarija Split smoke run. The generated admin showed `[object Object]`
+in several block fields and silently dropped keys on save — the canonical
+"every Filament Repeater + relationship + JSON data column with a type
+discriminator" anti-pattern.
+
+Diagnosed live via Livewire-test round-trips on the smoke project, then
+validated with the codex-debate-partner agent (round 2 consensus). The fix
+is prompt-only: no installer code changed, but the Laravel admin step's
+fingerprint flips so the next `tessera new` run sees the new principles.
+
+### Changed
+
+- `stacks/laravel.yaml` admin step (`prompt_version` 1 → 2): added an explicit
+  "Polymorphic Block Builder" principle block. Eight non-negotiable rules cover
+  per-block-type form-path namespacing, canonical storage shape preserved via
+  `mutateRelationshipDataBefore{Fill,Save,Create}Using`, single-source key
+  declaration alongside the form schema, fail-loudly-in-dev / drop-and-log-in-
+  prod handling for unknown keys, the RichEditor-vs-Textarea state-shape clash
+  (TipTap JSON document leaking into a plain text input rendering as
+  `[object Object]`), permissive URL validation that accepts relative `/route`
+  paths, canonical underscore form for storage discriminators, and a vendor-
+  translation-pack check tied to `app.fallback_locale`. Includes a seven-point
+  manual smoke-test checklist (create, clone, type-switch, delete-readd,
+  reorder, hidden-section staleness, validation scoping).
+- `stacks/laravel.yaml` tests step (`prompt_version` 1 → 2): added a
+  `PageBlockBuilderTest` requirement (no-op save round-trip preserves every
+  seeded block-data key; rendered admin HTML contains zero `[object Object]`
+  and zero `curator::` raw keys) and a `CuratorLocaleTest` requirement
+  (every supported locale has a published curator vendor pack OR
+  `app.fallback_locale` points to a locale that does).
+
+### Why version-bumped instead of patched silently
+
+Both step prompts now have a different `template_fingerprint`. Plans compiled
+against `v3.11.1` of the manifest will cache-bust against this commit. Tagging
+makes that explicit so anyone resuming a paused project sees the version delta
+in the audit trail.
+
+### Migration note
+
+Nothing to do. New Laravel projects generated after this commit will have the
+correct polymorphic-builder layout out of the box. Existing projects
+(`v3.11.0`-class output and the Vinarija Split smoke run) need the manual fix
+documented in this commit's diff: namespace block-type form paths, route
+storage ↔ form translation through the relationship-data mutators, rename any
+RichEditor + Textarea sharing a key, accept relative URLs in link-field
+validators, and either ship reviewed translations or set
+`app.fallback_locale` to one that exists.
+
 ## [3.11.1] – 2026-04-29
 
 Hot-fix: `v3.11.0` advertised `php: ^8.2` but pulled in `symfony/yaml: ^8.0`,
