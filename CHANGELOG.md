@@ -5,6 +5,34 @@ All notable changes to Tessera Installer are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.11.1] – 2026-04-29
+
+Hot-fix: `v3.11.0` advertised `php: ^8.2` but pulled in `symfony/yaml: ^8.0`,
+which itself requires PHP 8.4+. The constraint was unsatisfiable on PHP 8.2
+and 8.3 — `composer install` failed for anyone on those versions, including
+two-thirds of the CI matrix.
+
+Resolution: bump the runtime PHP requirement to **`^8.4`** to match what
+`symfony/yaml` already silently demanded. `v3.11.0` was effectively a
+PHP-8.4-only release; this version makes that honest.
+
+### Changed
+
+- `composer.json`: `php` constraint `^8.2` → `^8.4`.
+- CI matrix: dropped PHP 8.2 and 8.3 jobs (3 OS × 2 PHP versions instead of
+  3 × 4). Smoke job uses PHP 8.4.
+- `bin/tessera --help` and `tessera doctor` messaging: PHP 8.2+ → PHP 8.4+.
+- `LaravelStack::preflight` version_compare check raised to 8.4.0.
+- README badge + testing line: PHP 8.4–8.5 (and updated test counts to the
+  v3.11.0 numbers that should have been there to begin with: 406 tests / 801
+  assertions).
+
+### Migration note
+
+If you installed `v3.11.0` on PHP 8.2 or 8.3, `composer install` failed and
+nothing happened — there is nothing to undo. Upgrade your PHP to 8.4+ and
+`composer global update tessera/installer` will pick up `v3.11.1`.
+
 ## [3.11.0] – 2026-04-29
 
 The Sprint 1 architecture re-platform: every stack now runs through a versioned YAML

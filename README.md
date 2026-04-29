@@ -1,7 +1,7 @@
 # Tessera Installer
 
 [![Tests](https://github.com/drnasin/tessera-installer/actions/workflows/tests.yml/badge.svg)](https://github.com/drnasin/tessera-installer/actions/workflows/tests.yml)
-[![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php&logoColor=white)](https://www.php.net/)
+[![PHP](https://img.shields.io/badge/PHP-8.4%2B-777BB4?logo=php&logoColor=white)](https://www.php.net/)
 [![License](https://img.shields.io/badge/License-Source--available-blue)](LICENSE.md)
 
 Website: **[tessera-ai.net](https://tessera-ai.net)** · Docs: [tessera-ai.net/docs](https://tessera-ai.net/docs/what-is-tessera)
@@ -131,7 +131,7 @@ For continuing changes:
 vendor/bin/phpunit
 ```
 
-403 tests, 782 assertions — all passing with zero AI tokens. CI runs on Ubuntu, Windows, and macOS with PHP 8.2–8.5.
+406 tests, 801 assertions — all passing with zero AI tokens. CI runs on Ubuntu, Windows, and macOS with PHP 8.4–8.5.
 
 ## Contributing & adding a stack
 

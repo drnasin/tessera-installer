@@ -177,7 +177,7 @@ function showHelp(): void
     Console::cyan('    tessera new my-restaurant');
     Console::line();
     Console::line('  AI will ask what you need and build the project.');
-    Console::line('  Requires PHP 8.2+ and at least one AI CLI (claude, gemini, codex).');
+    Console::line('  Requires PHP 8.4+ and at least one AI CLI (claude, gemini, codex).');
     Console::line();
 }
 
@@ -262,7 +262,7 @@ function showDoctor(): void
     if ($system->hasTool('php')) {
         Console::success("PHP — {$system->toolVersion('php')}");
     } else {
-        Console::fail('PHP — not found (need 8.2+)');
+        Console::fail('PHP — not found (need 8.4+)');
         $allGood = false;
     }
 

@@ -58,15 +58,15 @@ final class LaravelStack implements StackInterface
             .'multi-language sites, blog platforms, booking systems. '
             .'Best for: content websites, web shops, '
             .'business applications, internal tools, dashboards. '
-            .'Stack: PHP 8.2+, Laravel (latest), Filament (latest), Livewire, Tailwind, MySQL/SQLite.';
+            .'Stack: PHP 8.4+, Laravel (latest), Filament (latest), Livewire, Tailwind, MySQL/SQLite.';
     }
 
     public function preflight(): array
     {
         $missing = [];
 
-        if (version_compare(PHP_VERSION, '8.2.0', '<')) {
-            $missing[] = 'PHP 8.2+ (found: '.PHP_VERSION.')';
+        if (version_compare(PHP_VERSION, '8.4.0', '<')) {
+            $missing[] = 'PHP 8.4+ (found: '.PHP_VERSION.')';
         }
 
         $composer = Console::execSilent('composer --version');
