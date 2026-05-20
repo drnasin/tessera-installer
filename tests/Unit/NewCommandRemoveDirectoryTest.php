@@ -89,6 +89,21 @@ final class NewCommandRemoveDirectoryTest extends TestCase
     }
 
     #[Test]
+    public function refuses_to_delete_cwd_itself(): void
+    {
+        file_put_contents($this->sandbox.DIRECTORY_SEPARATOR.'canary.txt', 'do not delete');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('/current working directory/');
+
+        try {
+            $this->removeDirectory($this->sandbox);
+        } finally {
+            $this->assertFileExists($this->sandbox.DIRECTORY_SEPARATOR.'canary.txt');
+        }
+    }
+
+    #[Test]
     public function unlinks_symlink_without_following(): void
     {
         if (PHP_OS_FAMILY === 'Windows') {
@@ -116,6 +131,30 @@ final class NewCommandRemoveDirectoryTest extends TestCase
             $this->assertFileExists($target.DIRECTORY_SEPARATOR.'canary.txt');
         } finally {
             $this->bestEffortDelete($target);
+        }
+    }
+
+    #[Test]
+    public function refuses_symlink_that_resolves_to_cwd(): void
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            $this->markTestSkipped('Symlink creation on Windows requires admin/dev mode.');
+        }
+
+        $link = $this->sandbox.DIRECTORY_SEPARATOR.'mylink';
+        symlink($this->sandbox, $link);
+        file_put_contents($this->sandbox.DIRECTORY_SEPARATOR.'canary.txt', 'do not delete');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('/current working directory/');
+
+        try {
+            $this->removeDirectory($link);
+        } finally {
+            $this->assertFileExists($this->sandbox.DIRECTORY_SEPARATOR.'canary.txt');
+            if (is_link($link)) {
+                @unlink($link);
+            }
         }
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tessera\Installer;
 
+use Tessera\Installer\Cli\ProjectDirectoryName;
 use Tessera\Installer\Stacks\StackInterface;
 use Tessera\Installer\Stacks\StackRegistry;
 
@@ -40,6 +41,11 @@ final class NewCommand
         ?string $forcedStack = null,
         ?string $requirementsFixturePath = null,
     ) {
+        $directoryError = ProjectDirectoryName::validate($directory);
+        if ($directoryError !== null) {
+            throw new \InvalidArgumentException('Invalid directory name: '.$directoryError);
+        }
+
         $this->directory = $directory;
         $this->fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
         $this->force = $force;
@@ -1022,7 +1028,11 @@ PROMPT;
         $realN = str_replace('\\', '/', $real);
         $cwdN = str_replace('\\', '/', $cwd);
 
-        if ($realN !== $cwdN && ! str_starts_with($realN.'/', $cwdN.'/')) {
+        if ($realN === $cwdN) {
+            throw new \RuntimeException("Refusing to remove '{$path}': target is the current working directory.");
+        }
+
+        if (! str_starts_with($realN.'/', $cwdN.'/')) {
             throw new \RuntimeException("Refusing to remove '{$path}': outside current working directory ({$cwd}).");
         }
 

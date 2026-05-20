@@ -40,6 +40,8 @@ if (! $loaded) {
     require $src . '/AiResponse.php';
     require $src . '/AiTool.php';
     require $src . '/Complexity.php';
+    require $src . '/Cli/NewCommandArgs.php';
+    require $src . '/Cli/ProjectDirectoryName.php';
     require $src . '/ToolSelection.php';
     require $src . '/ToolRouter.php';
     require $src . '/Console.php';
@@ -50,6 +52,7 @@ if (! $loaded) {
 }
 
 use Tessera\Installer\AiTool;
+use Tessera\Installer\Cli\ProjectDirectoryName;
 use Tessera\Installer\Console;
 use Tessera\Installer\NewCommand;
 use Tessera\Installer\SystemInfo;
@@ -125,16 +128,24 @@ if ($command === 'plan') {
 // ─── New project ───
 
 if ($command === 'new') {
-    $parsed = \Tessera\Installer\Cli\NewCommandArgs::parse(array_slice($args, 1));
+    $newArgs = array_slice($args, 1);
+    $parsed = \Tessera\Installer\Cli\NewCommandArgs::parse($newArgs);
 
     if ($parsed->directory === null) {
+        $invalidDirectoryLikeArg = firstInvalidDirectoryLikeArg($newArgs);
+        if ($invalidDirectoryLikeArg !== null) {
+            Console::error('Invalid directory name: '.ProjectDirectoryName::validate($invalidDirectoryLikeArg));
+            exit(1);
+        }
+
         Console::error('Missing directory name.');
         Console::line('Usage: tessera new {project-name}');
         exit(1);
     }
 
-    if (! preg_match('/^[a-zA-Z0-9._-]+$/', $parsed->directory)) {
-        Console::error('Invalid directory name. Use only letters, numbers, -, _, .');
+    $directoryError = ProjectDirectoryName::validate($parsed->directory);
+    if ($directoryError !== null) {
+        Console::error('Invalid directory name: '.$directoryError);
         exit(1);
     }
 
@@ -179,6 +190,40 @@ function showHelp(): void
     Console::line('  AI will ask what you need and build the project.');
     Console::line('  Requires PHP 8.4+ and at least one AI CLI (claude, gemini, codex).');
     Console::line();
+}
+
+function firstInvalidDirectoryLikeArg(array $args): ?string
+{
+    $valueFlags = ['--stack', '--requirements-fixture'];
+    $booleanFlags = ['--force', '-f'];
+    $skipNext = false;
+
+    foreach ($args as $arg) {
+        if ($skipNext) {
+            $skipNext = false;
+
+            continue;
+        }
+
+        if (in_array($arg, $valueFlags, true)) {
+            $skipNext = true;
+
+            continue;
+        }
+
+        if (in_array($arg, $booleanFlags, true)
+            || str_starts_with($arg, '--stack=')
+            || str_starts_with($arg, '--requirements-fixture=')
+        ) {
+            continue;
+        }
+
+        if (str_starts_with($arg, '-')) {
+            return $arg;
+        }
+    }
+
+    return null;
 }
 
 function showTools(): void
