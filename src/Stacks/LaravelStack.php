@@ -1137,8 +1137,9 @@ HELPER);
         $env = EnvFile::setKey($env, 'DB_USERNAME', $dbUser);
         $env = EnvFile::setKey($env, 'DB_PASSWORD', $dbPass);
 
-        // 3) Try to create the database. $dbName has been validated against a
-        //    strict allowlist above, so embedding it in DDL is safe.
+        // 3) Try to create the database. MySQL/MariaDB need quoted
+        //    identifiers for allowed names like `my-restaurant`.
+        $mySqlDatabaseIdentifier = $isPostgres ? null : DatabaseIdentifier::quoteMySql($dbName);
         $createResult = $isPostgres
             ? $runner->run(
                 argv: ['createdb', '-h', $dbHost, '-p', $dbPort, '-U', $dbUser, $dbName],
@@ -1147,7 +1148,7 @@ HELPER);
                 timeout: 15,
             )
             : $runner->run(
-                argv: [$cli, '-u', $dbUser, '-h', $dbHost, '-P', $dbPort, '-e', "CREATE DATABASE IF NOT EXISTS {$dbName};"],
+                argv: [$cli, '-u', $dbUser, '-h', $dbHost, '-P', $dbPort, '-e', "CREATE DATABASE IF NOT EXISTS {$mySqlDatabaseIdentifier};"],
                 cwd: $this->fullPath,
                 env: $this->dbEnv('mysql', $dbPass),
                 timeout: 15,

@@ -49,4 +49,18 @@ final class DatabaseIdentifier
             );
         }
     }
+
+    /**
+     * Quote a safe identifier for MySQL/MariaDB DDL.
+     *
+     * MySQL treats `my-project` as an expression unless it is quoted. The
+     * allowlist already rejects backticks, but escaping here keeps the method
+     * correct if validation changes later.
+     */
+    public static function quoteMySql(string $name): string
+    {
+        self::assertValid($name, 'database name');
+
+        return '`'.str_replace('`', '``', $name).'`';
+    }
 }

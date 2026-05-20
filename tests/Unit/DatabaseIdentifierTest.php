@@ -91,4 +91,19 @@ final class DatabaseIdentifierTest extends TestCase
         DatabaseIdentifier::assertValid('good_name');
         $this->assertTrue(true); // no exception
     }
+
+    #[Test]
+    public function quote_mysql_wraps_identifiers_in_backticks(): void
+    {
+        $this->assertSame('`my-project`', DatabaseIdentifier::quoteMySql('my-project'));
+        $this->assertSame('`my_project`', DatabaseIdentifier::quoteMySql('my_project'));
+    }
+
+    #[Test]
+    public function quote_mysql_rejects_unsafe_identifier(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        DatabaseIdentifier::quoteMySql('db;DROP');
+    }
 }
