@@ -6,6 +6,7 @@ namespace Tessera\Installer\Stacks;
 
 use Tessera\Installer\Adapters\AdapterRegistry;
 use Tessera\Installer\Console;
+use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Events\EventLog;
 use Tessera\Installer\Events\EventType;
 use Tessera\Installer\Manifest\ManifestCompiler;
@@ -149,7 +150,7 @@ final class YamlStackRunner
 
     private function detectNodeVersion(): string
     {
-        $node = Console::execSilent('node --version');
+        $node = Console::execSilentArgv(['node', '--version'], env: EnvPolicy::minimal());
 
         if ($node['exit'] === 0) {
             return 'Node.js '.trim($node['output']);
@@ -160,7 +161,7 @@ final class YamlStackRunner
 
     private function detectGoVersion(): string
     {
-        $go = Console::execSilent('go version');
+        $go = Console::execSilentArgv(['go', 'version'], env: EnvPolicy::minimal());
 
         if ($go['exit'] === 0) {
             return trim($go['output']);
@@ -171,7 +172,7 @@ final class YamlStackRunner
 
     private function detectFlutterVersion(): string
     {
-        $flutter = Console::execSilent('flutter --version');
+        $flutter = Console::execSilentArgv(['flutter', '--version'], env: EnvPolicy::minimal());
 
         if ($flutter['exit'] === 0) {
             $first = strtok((string) $flutter['output'], "\n");
@@ -192,7 +193,7 @@ final class YamlStackRunner
     {
         $lines = [];
 
-        $php = Console::execSilent('php --version');
+        $php = Console::execSilentArgv(['php', '--version'], env: EnvPolicy::minimal());
         if ($php['exit'] === 0) {
             $first = strtok((string) $php['output'], "\n");
             if ($first !== false) {
@@ -200,7 +201,7 @@ final class YamlStackRunner
             }
         }
 
-        $composer = Console::execSilent('composer --version');
+        $composer = Console::execSilentArgv(['composer', '--version'], env: EnvPolicy::minimal());
         if ($composer['exit'] === 0) {
             $lines[] = trim((string) $composer['output']);
         }

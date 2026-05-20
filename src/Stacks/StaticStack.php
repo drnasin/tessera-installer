@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tessera\Installer\Stacks;
 
 use Tessera\Installer\Console;
+use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Memory;
 use Tessera\Installer\SystemInfo;
 use Tessera\Installer\ToolRouter;
@@ -44,7 +45,7 @@ final class StaticStack implements StackInterface
     {
         $missing = [];
 
-        $npm = Console::execSilent('npm --version');
+        $npm = Console::execSilentArgv(['npm', '--version'], env: EnvPolicy::minimal());
         if ($npm['exit'] !== 0) {
             $missing[] = 'Node.js + npm (https://nodejs.org)';
         }
@@ -70,7 +71,7 @@ final class StaticStack implements StackInterface
 
         if (file_exists($fullPath.'/package.json')) {
             Console::spinner('Installing npm packages...');
-            Console::exec('npm install', $fullPath);
+            Console::execArgv(['npm', 'install'], $fullPath);
         }
 
         return true;

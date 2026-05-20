@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tessera\Installer\Stacks;
 
 use Tessera\Installer\Console;
+use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Memory;
 use Tessera\Installer\SystemInfo;
 use Tessera\Installer\ToolRouter;
@@ -42,7 +43,7 @@ final class NodeStack implements StackInterface
     {
         $missing = [];
 
-        $node = Console::execSilent('node --version');
+        $node = Console::execSilentArgv(['node', '--version'], env: EnvPolicy::minimal());
         if ($node['exit'] !== 0) {
             $missing[] = 'Node.js 20+ (https://nodejs.org)';
         } else {
@@ -52,7 +53,7 @@ final class NodeStack implements StackInterface
             }
         }
 
-        $npm = Console::execSilent('npm --version');
+        $npm = Console::execSilentArgv(['npm', '--version'], env: EnvPolicy::minimal());
         if ($npm['exit'] !== 0) {
             $missing[] = 'npm';
         }
@@ -78,7 +79,7 @@ final class NodeStack implements StackInterface
 
         if (is_file($fullPath.'/package.json')) {
             Console::spinner('Installing npm packages...');
-            Console::exec('npm install', $fullPath);
+            Console::execArgv(['npm', 'install'], $fullPath);
         }
 
         return true;

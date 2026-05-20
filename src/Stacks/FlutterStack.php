@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tessera\Installer\Stacks;
 
 use Tessera\Installer\Console;
+use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Memory;
 use Tessera\Installer\StepRunner;
 use Tessera\Installer\SystemInfo;
@@ -45,12 +46,12 @@ final class FlutterStack implements StackInterface
     {
         $missing = [];
 
-        $flutter = Console::execSilent('flutter --version');
+        $flutter = Console::execSilentArgv(['flutter', '--version'], env: EnvPolicy::minimal());
         if ($flutter['exit'] !== 0) {
             $missing[] = 'Flutter SDK (https://flutter.dev)';
         }
 
-        $dart = Console::execSilent('dart --version');
+        $dart = Console::execSilentArgv(['dart', '--version'], env: EnvPolicy::minimal());
         if ($dart['exit'] !== 0) {
             $missing[] = 'Dart SDK (comes with Flutter)';
         }
@@ -70,7 +71,7 @@ final class FlutterStack implements StackInterface
             $parentRunner = new StepRunner($router, getcwd());
             $result = $parentRunner->runCommand(
                 name: '[1/5] Create Flutter project',
-                command: "flutter create {$directory} --org com.tessera --no-pub",
+                argv: ['flutter', 'create', $directory, '--org', 'com.tessera', '--no-pub'],
                 verify: fn (): ?string => is_file($fullPath.'/pubspec.yaml') ? null : 'pubspec.yaml not found',
                 fixHint: "Run: flutter create {$directory} --org com.tessera",
             );
@@ -97,7 +98,7 @@ final class FlutterStack implements StackInterface
         $fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
 
         Console::spinner('Flutter pub get...');
-        Console::exec('flutter pub get', $fullPath);
+        Console::execArgv(['flutter', 'pub', 'get'], $fullPath);
 
         return true;
     }

@@ -69,7 +69,7 @@ final class LaravelStack implements StackInterface
             $missing[] = 'PHP 8.4+ (found: '.PHP_VERSION.')';
         }
 
-        $composer = Console::execSilent('composer --version');
+        $composer = Console::execSilentArgv(['composer', '--version'], env: EnvPolicy::minimal());
         if ($composer['exit'] !== 0) {
             $missing[] = 'Composer (https://getcomposer.org)';
         }
@@ -109,7 +109,7 @@ final class LaravelStack implements StackInterface
             $parentRunner = new StepRunner($router, getcwd());
             $result = $parentRunner->runCommand(
                 name: '[1/8] Create Laravel project',
-                command: "composer create-project laravel/laravel {$directory} --prefer-dist --no-interaction",
+                argv: ['composer', 'create-project', 'laravel/laravel', $directory, '--prefer-dist', '--no-interaction'],
                 verify: fn (): ?string => is_file($this->fullPath.'/artisan') ? null : 'artisan file not found',
                 fixHint: "Run: composer create-project laravel/laravel {$directory} --prefer-dist",
             );
@@ -223,20 +223,20 @@ final class LaravelStack implements StackInterface
         $fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
 
         Console::spinner('Running migrations...');
-        Console::exec('php artisan migrate --force', $fullPath);
+        Console::execArgv(['php', 'artisan', 'migrate', '--force'], $fullPath);
 
         Console::spinner('Building assets...');
-        $npm = Console::execSilent('npm --version');
+        $npm = Console::execSilentArgv(['npm', '--version'], env: EnvPolicy::minimal());
 
         if ($npm['exit'] === 0) {
-            Console::exec('npm install', $fullPath);
-            Console::exec('npm run build', $fullPath);
+            Console::execArgv(['npm', 'install'], $fullPath);
+            Console::execArgv(['npm', 'run', 'build'], $fullPath);
         }
 
-        Console::exec('php artisan config:cache', $fullPath);
-        Console::exec('php artisan route:cache', $fullPath);
-        Console::exec('php artisan view:cache', $fullPath);
-        Console::exec('php artisan filament:cache-components', $fullPath);
+        Console::execArgv(['php', 'artisan', 'config:cache'], $fullPath);
+        Console::execArgv(['php', 'artisan', 'route:cache'], $fullPath);
+        Console::execArgv(['php', 'artisan', 'view:cache'], $fullPath);
+        Console::execArgv(['php', 'artisan', 'filament:cache-components'], $fullPath);
 
         return true;
     }
@@ -299,27 +299,24 @@ final class LaravelStack implements StackInterface
         // Install all core + dev packages in one composer call (single autoload generation)
         $devPackages = ['laravel/boost', 'laravel/pint', 'laravel/telescope', 'larastan/larastan'];
 
-        $allPackages = implode(' ', $packages);
-        $allDevPackages = implode(' ', $devPackages);
-
         Console::line();
         Console::spinner('Install packages');
 
         // Try core + dev in two fast calls
-        $coreExit = Console::exec(
-            "composer require {$allPackages} --no-interaction --no-autoloader",
+        $coreExit = Console::execArgv(
+            array_merge(['composer', 'require'], $packages, ['--no-interaction', '--no-autoloader']),
             $this->fullPath,
         );
 
-        $devExit = Console::exec(
-            "composer require --dev {$allDevPackages} --no-interaction --no-autoloader",
+        $devExit = Console::execArgv(
+            array_merge(['composer', 'require', '--dev'], $devPackages, ['--no-interaction', '--no-autoloader']),
             $this->fullPath,
         );
 
         if ($coreExit === 0 && $devExit === 0) {
             // Generate autoload once
             Console::spinner('Generating autoload...');
-            Console::exec('composer dump-autoload', $this->fullPath);
+            Console::execArgv(['composer', 'dump-autoload'], $this->fullPath);
             Console::success('Install packages');
 
             return true;
@@ -337,7 +334,7 @@ final class LaravelStack implements StackInterface
 
         if ($ok) {
             Console::spinner('Generating autoload...');
-            Console::exec('composer dump-autoload', $this->fullPath);
+            Console::execArgv(['composer', 'dump-autoload'], $this->fullPath);
         }
 
         return $ok;
@@ -348,7 +345,7 @@ final class LaravelStack implements StackInterface
         // Install Filament panels
         $result = $this->steps->runCommand(
             name: 'Filament panel setup',
-            command: 'php artisan filament:install --panels --no-interaction',
+            argv: ['php', 'artisan', 'filament:install', '--panels', '--no-interaction'],
             verify: function (): ?string {
                 // Check AdminPanelProvider exists
                 $path = $this->fullPath.'/app/Providers/Filament/AdminPanelProvider.php';
@@ -378,8 +375,8 @@ php artisan tinker --execute="App\Models\User::create(['name'=>'Admin','email'=>
 If User model doesn't have 'name' field, check the migration and adapt.
 PROMPT,
             verify: function (): ?string {
-                $result = Console::execSilent(
-                    'php artisan tinker --execute="echo App\\Models\\User::where(\'email\',\'admin@tessera.test\')->exists() ? \'YES\' : \'NO\';"',
+                $result = Console::execSilentArgv(
+                    ['php', 'artisan', 'tinker', '--execute=echo App\\Models\\User::where(\'email\',\'admin@tessera.test\')->exists() ? \'YES\' : \'NO\';'],
                     $this->fullPath,
                 );
 
@@ -473,32 +470,36 @@ PROMPT,
     {
         $publishes = [
             'spatie/laravel-permission' => [
-                'command' => 'php artisan vendor:publish --provider="Spatie\\Permission\\PermissionServiceProvider"',
+                'argv' => ['php', 'artisan', 'vendor:publish', '--provider=Spatie\\Permission\\PermissionServiceProvider'],
                 'check' => 'config/permission.php',
+                'fixHint' => 'Run: php artisan vendor:publish --provider="Spatie\\Permission\\PermissionServiceProvider"',
             ],
             'spatie/laravel-medialibrary' => [
-                'command' => 'php artisan vendor:publish --provider="Spatie\\MediaLibrary\\MediaLibraryServiceProvider" --tag="medialibrary-migrations"',
+                'argv' => ['php', 'artisan', 'vendor:publish', '--provider=Spatie\\MediaLibrary\\MediaLibraryServiceProvider', '--tag=medialibrary-migrations'],
                 'check' => null,
+                'fixHint' => 'Run: php artisan vendor:publish --provider="Spatie\\MediaLibrary\\MediaLibraryServiceProvider" --tag="medialibrary-migrations"',
             ],
             'spatie/laravel-honeypot' => [
-                'command' => 'php artisan vendor:publish --provider="Spatie\\Honeypot\\HoneypotServiceProvider" --tag="honeypot-config"',
+                'argv' => ['php', 'artisan', 'vendor:publish', '--provider=Spatie\\Honeypot\\HoneypotServiceProvider', '--tag=honeypot-config'],
                 'check' => 'config/honeypot.php',
+                'fixHint' => 'Run: php artisan vendor:publish --provider="Spatie\\Honeypot\\HoneypotServiceProvider" --tag="honeypot-config"',
             ],
             'filament-curator-config' => [
-                'command' => 'php artisan vendor:publish --provider="Awcodes\Curator\CuratorServiceProvider"',
+                'argv' => ['php', 'artisan', 'vendor:publish', '--provider=Awcodes\\Curator\\CuratorServiceProvider'],
                 'check' => 'config/curator.php',
+                'fixHint' => 'Run: php artisan vendor:publish --provider="Awcodes\\Curator\\CuratorServiceProvider"',
             ],
         ];
 
         foreach ($publishes as $name => $config) {
             $this->steps->runCommand(
                 name: "Publish: {$name}",
-                command: $config['command'].' --no-interaction',
+                argv: array_merge($config['argv'], ['--no-interaction']),
                 verify: $config['check']
                     ? fn (): ?string => is_file($this->fullPath.'/'.$config['check']) ? null : "{$config['check']} not found"
                     : null,
                 skippable: true,
-                fixHint: 'Run: '.$config['command'],
+                fixHint: $config['fixHint'],
             );
         }
 
@@ -927,7 +928,10 @@ HELPER);
      */
     private function verifyRoutes(): void
     {
-        $result = Console::execSilent('php artisan route:list --json 2>&1', $this->fullPath);
+        $result = Console::execSilentArgv(
+            ['php', 'artisan', 'route:list', '--json'],
+            $this->fullPath,
+        );
 
         if ($result['exit'] !== 0) {
             Console::warn('  Route verification failed:');
@@ -979,7 +983,10 @@ HELPER);
                     continue;
                 }
 
-                $result = Console::execSilent("php -l \"{$file->getPathname()}\"");
+                $result = Console::execSilentArgv(
+                    ['php', '-l', $file->getPathname()],
+                    env: EnvPolicy::minimal(),
+                );
 
                 if ($result['exit'] !== 0) {
                     $errors[] = $file->getPathname().': '.$result['output'];
@@ -1279,8 +1286,8 @@ HELPER);
             Console::line();
             Console::spinner($attempt === 1 ? 'Running tests...' : "Running tests (attempt {$attempt}/{$maxAttempts})...");
 
-            $result = Console::execSilent(
-                'php artisan test --no-interaction 2>&1',
+            $result = Console::execSilentArgv(
+                ['php', 'artisan', 'test', '--no-interaction'],
                 $this->fullPath,
             );
 

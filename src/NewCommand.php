@@ -743,15 +743,15 @@ PROMPT;
 
     private function gitInit(): void
     {
-        $git = Console::execSilent('git --version');
+        $git = Console::execSilentArgv(['git', '--version'], env: EnvPolicy::minimal());
         if ($git['exit'] !== 0) {
             return;
         }
 
         Console::spinner('Initializing git repository...');
-        Console::execSilent('git init', $this->fullPath);
-        Console::execSilent('git add -A', $this->fullPath);
-        Console::execSilent('git commit -m "Initial Tessera setup"', $this->fullPath);
+        Console::execSilentArgv(['git', 'init'], $this->fullPath);
+        Console::execSilentArgv(['git', 'add', '-A'], $this->fullPath);
+        Console::execSilentArgv(['git', 'commit', '-m', 'Initial Tessera setup'], $this->fullPath);
         Console::success('Git repository initialized');
     }
 

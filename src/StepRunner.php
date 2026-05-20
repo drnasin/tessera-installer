@@ -22,14 +22,22 @@ final class StepRunner
 
     private int $maxRetries;
 
+    private CommandExecutor $commandExecutor;
+
     /** @var array<string, string> */
     private array $log = [];
 
-    public function __construct(ToolRouter $router, string $workingDir, int $maxRetries = 2)
+    public function __construct(
+        ToolRouter $router,
+        string $workingDir,
+        int $maxRetries = 2,
+        ?CommandExecutor $commandExecutor = null,
+    )
     {
         $this->router = $router;
         $this->workingDir = $workingDir;
         $this->maxRetries = $maxRetries;
+        $this->commandExecutor = $commandExecutor ?? new CommandRunner();
     }
 
     /**
@@ -93,14 +101,14 @@ final class StepRunner
      */
     public function runCommand(
         string $name,
-        string $command,
+        array $argv,
         ?callable $verify = null,
         bool $skippable = false,
         ?string $fixHint = null,
     ): bool {
         return $this->run(
             name: $name,
-            execute: fn (): bool => Console::exec($command, $this->workingDir) === 0,
+            execute: fn (): bool => $this->execArgv($argv) === 0,
             verify: $verify,
             skippable: $skippable,
             fixHint: $fixHint,
@@ -121,11 +129,13 @@ final class StepRunner
         $failed = [];
 
         // Try all at once first (faster)
-        $allPackages = implode(' ', $packages);
-        $exit = Console::exec(
-            "composer require{$devFlag} {$allPackages} --no-interaction",
-            $this->workingDir,
-        );
+        $bulkArgv = ['composer', 'require'];
+        if ($dev) {
+            $bulkArgv[] = '--dev';
+        }
+        $bulkArgv = array_merge($bulkArgv, $packages, ['--no-interaction']);
+
+        $exit = $this->execArgv($bulkArgv);
 
         if ($exit === 0) {
             Console::success($name);
@@ -138,10 +148,13 @@ final class StepRunner
         Console::warn('  Bulk install failed. Installing packages individually...');
 
         foreach ($packages as $package) {
-            $result = Console::execSilent(
-                "composer require{$devFlag} {$package} --no-interaction --no-autoloader",
-                $this->workingDir,
-            );
+            $argv = ['composer', 'require'];
+            if ($dev) {
+                $argv[] = '--dev';
+            }
+            $argv = array_merge($argv, [$package, '--no-interaction', '--no-autoloader']);
+
+            $result = $this->execSilentArgv($argv);
 
             if ($result['exit'] === 0) {
                 Console::success("  {$package}");
@@ -153,7 +166,7 @@ final class StepRunner
 
         // Generate autoload once for all individually installed packages
         Console::spinner('  Generating autoload...');
-        Console::execSilent('composer dump-autoload', $this->workingDir);
+        $this->execSilentArgv(['composer', 'dump-autoload']);
 
         if (empty($failed)) {
             Console::success($name);
@@ -174,10 +187,7 @@ final class StepRunner
 
             if ($response->success) {
                 // Verify it's installed now
-                $check = Console::execSilent(
-                    "composer show {$fail['package']} 2>&1",
-                    $this->workingDir,
-                );
+                $check = $this->execSilentArgv(['composer', 'show', $fail['package']]);
 
                 if ($check['exit'] === 0) {
                     Console::success("  {$fail['package']} (fixed by AI)");
@@ -516,6 +526,50 @@ FORMAT;
         }
 
         return $response->success;
+    }
+
+    /**
+     * @param  array<int, string>  $argv
+     */
+    private function execArgv(array $argv, ?EnvPolicy $env = null, ?string $stdin = null, ?int $timeout = null): int
+    {
+        $result = $this->commandExecutor->run(
+            argv: $argv,
+            cwd: $this->workingDir,
+            env: $env ?? EnvPolicy::buildTool(),
+            stdin: $stdin,
+            timeout: $timeout,
+        );
+
+        if ($result->stdout !== '') {
+            fwrite(STDOUT, $result->stdout);
+        }
+
+        if ($result->stderr !== '') {
+            fwrite(STDERR, $result->stderr);
+        }
+
+        return $result->exitCode;
+    }
+
+    /**
+     * @param  array<int, string>  $argv
+     * @return array{output: string, exit: int}
+     */
+    private function execSilentArgv(array $argv, ?EnvPolicy $env = null, ?string $stdin = null, ?int $timeout = null): array
+    {
+        $result = $this->commandExecutor->run(
+            argv: $argv,
+            cwd: $this->workingDir,
+            env: $env ?? EnvPolicy::buildTool(),
+            stdin: $stdin,
+            timeout: $timeout,
+        );
+
+        return [
+            'output' => $result->combinedOutput(),
+            'exit' => $result->exitCode,
+        ];
     }
 
     /**

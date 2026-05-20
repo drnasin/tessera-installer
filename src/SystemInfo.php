@@ -244,19 +244,19 @@ CONTEXT;
         $this->packageManagers = [];
 
         $managers = [
-            'brew' => 'brew --version',
-            'apt' => 'apt --version',
-            'dnf' => 'dnf --version',
-            'yum' => 'yum --version',
-            'pacman' => 'pacman --version',
-            'scoop' => 'scoop --version',
-            'choco' => 'choco --version',
-            'winget' => 'winget --version',
-            'snap' => 'snap --version',
+            'brew' => ['brew', '--version'],
+            'apt' => ['apt', '--version'],
+            'dnf' => ['dnf', '--version'],
+            'yum' => ['yum', '--version'],
+            'pacman' => ['pacman', '--version'],
+            'scoop' => ['scoop', '--version'],
+            'choco' => ['choco', '--version'],
+            'winget' => ['winget', '--version'],
+            'snap' => ['snap', '--version'],
         ];
 
-        foreach ($managers as $name => $cmd) {
-            $result = Console::execSilent($cmd);
+        foreach ($managers as $name => $argv) {
+            $result = Console::execSilentArgv($argv, env: EnvPolicy::minimal());
             if ($result['exit'] === 0) {
                 $version = trim(Console::firstLine($result['output']));
                 $this->packageManagers[$name] = $version;
@@ -269,23 +269,23 @@ CONTEXT;
         $this->installedTools = [];
 
         $tools = [
-            'php' => 'php --version',
-            'composer' => 'composer --version',
-            'node' => 'node --version',
-            'npm' => 'npm --version',
-            'go' => 'go version',
-            'flutter' => 'flutter --version',
-            'dart' => 'dart --version',
-            'git' => 'git --version',
-            'docker' => 'docker --version',
-            'python' => 'python3 --version',
-            'ruby' => 'ruby --version',
-            'java' => 'java --version',
-            'cargo' => 'cargo --version',
+            'php' => ['php', '--version'],
+            'composer' => ['composer', '--version'],
+            'node' => ['node', '--version'],
+            'npm' => ['npm', '--version'],
+            'go' => ['go', 'version'],
+            'flutter' => ['flutter', '--version'],
+            'dart' => ['dart', '--version'],
+            'git' => ['git', '--version'],
+            'docker' => ['docker', '--version'],
+            'python' => ['python3', '--version'],
+            'ruby' => ['ruby', '--version'],
+            'java' => ['java', '--version'],
+            'cargo' => ['cargo', '--version'],
         ];
 
-        foreach ($tools as $name => $cmd) {
-            $result = Console::execSilent($cmd);
+        foreach ($tools as $name => $argv) {
+            $result = Console::execSilentArgv($argv, env: EnvPolicy::minimal());
             if ($result['exit'] === 0) {
                 $firstLine = trim(Console::firstLine($result['output']));
                 $this->installedTools[$name] = $firstLine;
@@ -298,14 +298,14 @@ CONTEXT;
         $this->databases = [];
 
         $dbs = [
-            'mysql' => 'mysql --version',
-            'mariadb' => 'mariadb --version',
-            'postgresql' => 'psql --version',
-            'sqlite' => 'sqlite3 --version',
+            'mysql' => ['mysql', '--version'],
+            'mariadb' => ['mariadb', '--version'],
+            'postgresql' => ['psql', '--version'],
+            'sqlite' => ['sqlite3', '--version'],
         ];
 
-        foreach ($dbs as $name => $cmd) {
-            $result = Console::execSilent($cmd);
+        foreach ($dbs as $name => $argv) {
+            $result = Console::execSilentArgv($argv, env: EnvPolicy::minimal());
             if ($result['exit'] === 0) {
                 $firstLine = trim(Console::firstLine($result['output']));
                 $this->databases[$name] = $firstLine;

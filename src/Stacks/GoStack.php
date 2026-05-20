@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tessera\Installer\Stacks;
 
 use Tessera\Installer\Console;
+use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Memory;
 use Tessera\Installer\SystemInfo;
 use Tessera\Installer\ToolRouter;
@@ -43,7 +44,7 @@ final class GoStack implements StackInterface
     {
         $missing = [];
 
-        $go = Console::execSilent('go version');
+        $go = Console::execSilentArgv(['go', 'version'], env: EnvPolicy::minimal());
         if ($go['exit'] !== 0) {
             $missing[] = 'Go 1.22+ (https://go.dev)';
         }
@@ -68,7 +69,7 @@ final class GoStack implements StackInterface
         $fullPath = getcwd().DIRECTORY_SEPARATOR.$directory;
 
         Console::spinner('Running go mod tidy...');
-        Console::exec('go mod tidy', $fullPath);
+        Console::execArgv(['go', 'mod', 'tidy'], $fullPath);
 
         return true;
     }

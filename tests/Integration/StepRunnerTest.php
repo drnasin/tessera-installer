@@ -7,7 +7,10 @@ namespace Tessera\Installer\Tests\Integration;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Tessera\Installer\AiTool;
+use Tessera\Installer\CommandExecutor;
+use Tessera\Installer\CommandResult;
 use Tessera\Installer\Console;
+use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\FakeConsoleInput;
 use Tessera\Installer\StepRunner;
 use Tessera\Installer\ToolRouter;
@@ -31,6 +34,7 @@ final class StepRunnerTest extends TestCase
     protected function tearDown(): void
     {
         Console::setInput(null);
+        Console::setCommandExecutor(null);
 
         parent::tearDown();
     }
@@ -199,5 +203,99 @@ final class StepRunnerTest extends TestCase
         // executeWithFallback which calls the actual AI tool (which is fake).
         // The test validates that the step runner at least enters the retry loop.
         $this->assertArrayHasKey('Flaky step', $runner->getLog());
+    }
+
+    #[Test]
+    public function run_command_uses_literal_argv_and_build_tool_env(): void
+    {
+        $executor = new class implements CommandExecutor
+        {
+            /** @var list<array{argv: array<int, string>, cwd: string, env: EnvPolicy|null}> */
+            public array $calls = [];
+
+            public function run(
+                array $argv,
+                string $cwd,
+                ?EnvPolicy $env = null,
+                ?string $stdin = null,
+                ?int $timeout = null,
+            ): CommandResult {
+                $this->calls[] = ['argv' => $argv, 'cwd' => $cwd, 'env' => $env];
+
+                return new CommandResult(0, '', '', false, 0.01);
+            }
+        };
+
+        $router = ToolRouter::withSingleTool(AiTool::fake('claude'));
+        $runner = new StepRunner($router, sys_get_temp_dir(), 2, $executor);
+
+        ob_start();
+        $result = $runner->runCommand('Run Composer', ['composer', 'install', '--no-interaction']);
+        ob_end_clean();
+
+        $this->assertTrue($result);
+        $this->assertCount(1, $executor->calls);
+        $this->assertSame(['composer', 'install', '--no-interaction'], $executor->calls[0]['argv']);
+        $this->assertSame(sys_get_temp_dir(), $executor->calls[0]['cwd']);
+        $this->assertInstanceOf(EnvPolicy::class, $executor->calls[0]['env']);
+        $this->assertSame(EnvPolicy::buildTool()->allowlist(), $executor->calls[0]['env']?->allowlist());
+    }
+
+    #[Test]
+    public function install_packages_builds_expected_argv_for_bulk_fallback_and_dev_mode(): void
+    {
+        $executor = new class implements CommandExecutor
+        {
+            /** @var list<array{argv: array<int, string>, cwd: string, env: EnvPolicy|null}> */
+            public array $calls = [];
+
+            public function run(
+                array $argv,
+                string $cwd,
+                ?EnvPolicy $env = null,
+                ?string $stdin = null,
+                ?int $timeout = null,
+            ): CommandResult {
+                $this->calls[] = ['argv' => $argv, 'cwd' => $cwd, 'env' => $env];
+
+                $command = implode(' ', $argv);
+
+                if ($command === 'composer require --dev laravel/pint larastan/larastan --no-interaction') {
+                    return new CommandResult(1, '', '', false, 0.01);
+                }
+
+                return new CommandResult(0, '', '', false, 0.01);
+            }
+        };
+
+        $router = ToolRouter::withSingleTool(AiTool::fake('claude'));
+        $runner = new StepRunner($router, sys_get_temp_dir(), 2, $executor);
+
+        ob_start();
+        $result = $runner->installPackages('Install dev tools', ['laravel/pint', 'larastan/larastan'], dev: true);
+        ob_end_clean();
+
+        $this->assertTrue($result);
+        $this->assertSame(
+            [
+                ['composer', 'require', '--dev', 'laravel/pint', 'larastan/larastan', '--no-interaction'],
+                ['composer', 'require', '--dev', 'laravel/pint', '--no-interaction', '--no-autoloader'],
+                ['composer', 'require', '--dev', 'larastan/larastan', '--no-interaction', '--no-autoloader'],
+                ['composer', 'dump-autoload'],
+            ],
+            array_column($executor->calls, 'argv'),
+        );
+        $this->assertSame(
+            [
+                EnvPolicy::buildTool()->allowlist(),
+                EnvPolicy::buildTool()->allowlist(),
+                EnvPolicy::buildTool()->allowlist(),
+                EnvPolicy::buildTool()->allowlist(),
+            ],
+            array_map(
+                static fn (array $call): array => $call['env'] instanceof EnvPolicy ? $call['env']->allowlist() : [],
+                $executor->calls,
+            ),
+        );
     }
 }

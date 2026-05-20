@@ -14,12 +14,19 @@ final class Console
 {
     private static ?ConsoleInput $input = null;
 
+    private static ?CommandExecutor $commandExecutor = null;
+
     /**
      * Swap the input provider (for testing).
      */
     public static function setInput(?ConsoleInput $input): void
     {
         self::$input = $input;
+    }
+
+    public static function setCommandExecutor(?CommandExecutor $commandExecutor): void
+    {
+        self::$commandExecutor = $commandExecutor;
     }
 
     public static function line(string $text = ''): void
@@ -195,6 +202,64 @@ final class Console
     }
 
     /**
+     * Run an argv command and print buffered stdout/stderr after exit.
+     *
+     * @param  array<int, string>  $argv
+     */
+    public static function execArgv(
+        array $argv,
+        ?string $workingDir = null,
+        ?EnvPolicy $env = null,
+        ?string $stdin = null,
+        ?int $timeout = null,
+    ): int {
+        $result = self::commandExecutor()->run(
+            argv: $argv,
+            cwd: self::workingDirectory($workingDir),
+            env: $env ?? EnvPolicy::buildTool(),
+            stdin: $stdin,
+            timeout: $timeout,
+        );
+
+        if ($result->stdout !== '') {
+            echo $result->stdout;
+        }
+
+        if ($result->stderr !== '') {
+            fwrite(STDERR, $result->stderr);
+        }
+
+        return $result->exitCode;
+    }
+
+    /**
+     * Run an argv command silently and return combined output + exit code.
+     *
+     * @param  array<int, string>  $argv
+     * @return array{output: string, exit: int}
+     */
+    public static function execSilentArgv(
+        array $argv,
+        ?string $workingDir = null,
+        ?EnvPolicy $env = null,
+        ?string $stdin = null,
+        ?int $timeout = null,
+    ): array {
+        $result = self::commandExecutor()->run(
+            argv: $argv,
+            cwd: self::workingDirectory($workingDir),
+            env: $env ?? EnvPolicy::buildTool(),
+            stdin: $stdin,
+            timeout: $timeout,
+        );
+
+        return [
+            'output' => $result->combinedOutput(),
+            'exit' => $result->exitCode,
+        ];
+    }
+
+    /**
      * Build clean environment without AI nesting markers or secrets.
      *
      * @return array<string, string>
@@ -221,6 +286,22 @@ final class Console
         }
 
         return $env;
+    }
+
+    private static function commandExecutor(): CommandExecutor
+    {
+        return self::$commandExecutor ??= new CommandRunner();
+    }
+
+    private static function workingDirectory(?string $workingDir): string
+    {
+        if ($workingDir !== null) {
+            return $workingDir;
+        }
+
+        $cwd = getcwd();
+
+        return is_string($cwd) && $cwd !== '' ? $cwd : '.';
     }
 
     /**

@@ -232,4 +232,40 @@ final class CommandRunnerTest extends TestCase
         $this->assertFalse($result->succeeded());
         $this->assertSame(127, $result->exitCode);
     }
+
+    #[Test]
+    public function windows_resolves_cmd_wrapper_from_path_and_preserves_cmd_metacharacters(): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $this->markTestSkipped('Windows-only .cmd wrapper test.');
+        }
+
+        $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'tessera_cmd_'.bin2hex(random_bytes(4));
+        mkdir($dir, 0755, true);
+        $commandName = 'tessera-cmd-'.bin2hex(random_bytes(3));
+        $scriptPath = $dir.DIRECTORY_SEPARATOR.$commandName.'.cmd';
+        $payload = 'hello world & A|B <C> ^D %(E)';
+        $originalPath = getenv('PATH');
+
+        file_put_contents(
+            $scriptPath,
+            "@echo off\r\n\"".PHP_BINARY."\" -r \"echo \$argv[1];\" -- \"%~1\"\r\nexit /b %ERRORLEVEL%\r\n",
+        );
+        putenv('PATH='.$dir.PATH_SEPARATOR.$originalPath);
+
+        try {
+            $result = $this->runner()->run(
+                argv: [$commandName, $payload],
+                cwd: $this->cwd,
+                env: EnvPolicy::minimal(),
+            );
+
+            $this->assertTrue($result->succeeded(), $result->combinedOutput());
+            $this->assertSame($payload, $result->stdout);
+        } finally {
+            putenv('PATH='.$originalPath);
+            @unlink($scriptPath);
+            @rmdir($dir);
+        }
+    }
 }
