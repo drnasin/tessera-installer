@@ -85,6 +85,13 @@ final class Memory
         return ! empty($this->state);
     }
 
+    public function traceId(): ?string
+    {
+        $traceId = $this->state['trace_id'] ?? null;
+
+        return is_string($traceId) && $traceId !== '' ? $traceId : null;
+    }
+
     /**
      * Record the start of a step.
      */

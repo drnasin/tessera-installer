@@ -81,14 +81,36 @@ final class PlanExecutor
         $stepResults = [];
         $allOk = true;
 
-        foreach ($plan->inTopologicalOrder() as $step) {
-            $result = $this->executeStep($step, $workingDir, $context);
-            $stepResults[] = $result;
+        try {
+            foreach ($plan->inTopologicalOrder() as $step) {
+                $result = $this->executeStep($step, $workingDir, $context);
+                $stepResults[] = $result;
 
-            if (! $result->success && ! $step->skippable) {
-                $allOk = false;
-                break;
+                if (! $result->success && ! $step->skippable) {
+                    $allOk = false;
+                    break;
+                }
             }
+        } catch (\Throwable $e) {
+            $allOk = false;
+
+            $this->memory?->fail('Plan execution crashed: '.$e->getMessage());
+
+            $this->eventLog->emit(EventType::BuildFail, [
+                'plan_hash' => $plan->planHash,
+                'total_duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'step_count' => count($stepResults),
+                'failed_count' => count(array_filter($stepResults, fn (StepResult $r): bool => ! $r->success)),
+                'failure_reason' => $e->getMessage(),
+                'exception_class' => $e::class,
+            ]);
+
+            return new PlanExecutionResult(
+                success: false,
+                stepResults: $stepResults,
+                planHash: $plan->planHash,
+                totalDurationMs: (int) round((microtime(true) - $startedAt) * 1000),
+            );
         }
 
         $totalMs = (int) round((microtime(true) - $startedAt) * 1000);
@@ -200,7 +222,39 @@ final class PlanExecutor
             stepName: $step->id,
         );
 
-        $response = $adapter->execute($rendered, $adapterContext);
+        try {
+            $response = $adapter->execute($rendered, $adapterContext);
+        } catch (\Throwable $e) {
+            $duration = (int) round((microtime(true) - $startedAt) * 1000);
+            $errorMessage = 'Adapter crashed: '.$e->getMessage();
+
+            $this->memory?->failStep($step->id, $errorMessage);
+
+            $this->eventLog->emit(
+                $step->skippable ? EventType::StepSkip : EventType::StepFail,
+                [
+                    'step_id' => $step->id,
+                    'adapter' => $adapter->name(),
+                    'duration_ms' => $duration,
+                    'error_excerpt' => mb_substr($errorMessage, 0, 500),
+                    'exception_class' => $e::class,
+                    'skippable' => $step->skippable,
+                ],
+            );
+
+            if ($step->skippable) {
+                return StepResult::skipped($step->id, $errorMessage);
+            }
+
+            return StepResult::failure(
+                stepId: $step->id,
+                response: null,
+                adapterUsed: $adapter->name(),
+                modelUsed: $resolvedModel,
+                durationMs: $duration,
+                errorMessage: $errorMessage,
+            );
+        }
         $duration = (int) round((microtime(true) - $startedAt) * 1000);
 
         // Adapter call complete. Now evaluate gates.

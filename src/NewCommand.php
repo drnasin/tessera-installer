@@ -378,28 +378,40 @@ final class NewCommand
         $this->memory = new Memory($this->fullPath);
 
         // Scaffold (stack calls memory->init() AFTER creating the project directory)
-        if (! $stack->scaffold($this->directory, $requirements, $this->router, $this->system, $this->memory)) {
-            // Save state on failure — don't delete, allow resume
-            $this->memory?->fail('Scaffold failed — run tessera new again to resume');
+        try {
+            if (! $stack->scaffold($this->directory, $requirements, $this->router, $this->system, $this->memory)) {
+                // Save state on failure — don't delete, allow resume
+                $this->memory?->fail('Scaffold failed — run tessera new again to resume');
+
+                Console::line();
+                Console::warn('Build failed. Your progress is saved.');
+                Console::line('  Run the same command again to resume from where it stopped.');
+                Console::line("  Or use --force to start fresh: tessera new {$this->directory} --force");
+
+                return 1;
+            }
+
+            // Post-setup
+            $stack->postSetup($this->directory);
+
+            // Git init
+            $this->gitInit();
+
+            // Done!
+            $this->showComplete($stack);
+
+            return 0;
+        } catch (\Throwable $e) {
+            $this->memory?->fail('Build crashed: '.$e->getMessage());
 
             Console::line();
-            Console::warn('Build failed. Your progress is saved.');
-            Console::line('  Run the same command again to resume from where it stopped.');
+            Console::error('Build crashed unexpectedly: '.$e->getMessage());
+            Console::line('  Your progress was saved so you can resume.');
+            Console::line('  Run the same command again to continue from the last safe point.');
             Console::line("  Or use --force to start fresh: tessera new {$this->directory} --force");
 
             return 1;
         }
-
-        // Post-setup
-        $stack->postSetup($this->directory);
-
-        // Git init
-        $this->gitInit();
-
-        // Done!
-        $this->showComplete($stack);
-
-        return 0;
     }
 
     /**

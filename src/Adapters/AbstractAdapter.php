@@ -12,10 +12,10 @@ use Tessera\Installer\Events\EventType;
  * Shared subprocess execution for AI CLI adapters.
  *
  * Concrete adapters (Claude, Codex, Gemini, future: Groq, Ollama) implement
- * just three abstract methods — detectCommand(), buildExecuteCommand(),
- * usesStdin() — and inherit:
+ * just three abstract methods - detectCommand(), buildExecuteCommand(),
+ * usesStdin() - and inherit:
  *
- *   - non-blocking proc_open with timeout
+ *   - subprocess execution with timeout
  *   - environment scrubbing (drops AI-nesting markers and inherited
  *     credentials of OTHER providers)
  *   - cached availability/version probing
@@ -121,66 +121,65 @@ abstract class AbstractAdapter implements AdapterInterface
     }
 
     /**
-     * Run a subprocess via array argv (no shell), with non-blocking I/O,
-     * scrubbed environment, and a hard timeout.
+     * Run a subprocess via array argv (no shell), with scrubbed environment
+     * and a hard timeout.
+     *
+     * Stdout/stderr go to temp files instead of pipes. That avoids Windows
+     * pipe deadlocks and allows verbose AI runs to emit large output without
+     * blocking the child process.
      *
      * @param  list<string>  $command
      */
     protected function runProcess(array $command, ?string $stdin, ?string $workingDir, int $timeout): AiResponse
     {
+        $cwd = $workingDir ?? (getcwd() ?: null);
+        $preparedCommand = self::prepareCommand($command, $cwd);
+        $stdoutFile = self::tempPath('adapter_stdout');
+        $stderrFile = self::tempPath('adapter_stderr');
         $descriptors = [
             0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
+            1 => ['file', $stdoutFile, 'w'],
+            2 => ['file', $stderrFile, 'w'],
         ];
 
         $env = $this->buildChildEnv();
-
-        $process = @proc_open($command, $descriptors, $pipes, $workingDir, $env);
+        $process = @proc_open($preparedCommand, $descriptors, $pipes, $cwd, $env);
 
         if (! is_resource($process)) {
+            @unlink($stdoutFile);
+            @unlink($stderrFile);
+
             return new AiResponse(false, '', 'Failed to start process', 1);
         }
 
         $timedOut = false;
         $pid = null;
+        $exitCode = -1;
 
         try {
-            if ($stdin !== null) {
+            if ($stdin !== null && isset($pipes[0]) && is_resource($pipes[0])) {
                 @fwrite($pipes[0], $stdin);
             }
-            @fclose($pipes[0]);
 
-            stream_set_blocking($pipes[1], false);
-            stream_set_blocking($pipes[2], false);
+            if (isset($pipes[0]) && is_resource($pipes[0])) {
+                @fclose($pipes[0]);
+            }
 
-            $output = '';
-            $error = '';
-            $startTime = time();
+            $startedAt = microtime(true);
 
-            // Timeout-check loop. We deliberately do NOT read pipes here:
-            // PHP's "non-blocking" mode on proc_open pipes is broken on
-            // Windows — both stream_get_contents() and fread() block
-            // until every descendant releases the pipe handle. That
-            // makes the time check below unreachable while the AI CLI
-            // is alive (smoke run: 300s timeout fired only after 633s).
-            // Reads happen exactly once below, after the process has
-            // actually exited or we have killed it.
             while (true) {
                 $status = proc_get_status($process);
                 $pid ??= $status['pid'] ?? null;
 
                 if (! $status['running']) {
+                    $exitCode = is_int($status['exitcode']) ? $status['exitcode'] : -1;
+
                     break;
                 }
 
-                if ((time() - $startTime) > $timeout) {
+                if ((microtime(true) - $startedAt) > $timeout) {
                     $timedOut = true;
 
-                    // proc_terminate alone leaves grandchildren (e.g. node spawned
-                    // by the AI CLI) running. Their open pipe handles then make
-                    // proc_close() block until they self-exit. Force-kill the
-                    // whole process tree first so the cleanup below is instant.
                     if ($pid !== null) {
                         self::killProcessTree($pid);
                     }
@@ -192,41 +191,24 @@ abstract class AbstractAdapter implements AdapterInterface
 
                 usleep(100_000);
             }
-
-            // Drain whatever was buffered after the loop exit. Skip on
-            // timeout: any pending output belongs to grandchildren we
-            // just killed, and reading from their not-yet-released pipe
-            // handles would block 5-30s on Windows for no value.
-            if (! $timedOut) {
-                while (! feof($pipes[1])) {
-                    $chunk = @fread($pipes[1], 8192);
-                    if ($chunk === false || $chunk === '') {
-                        break;
-                    }
-                    $output .= $chunk;
-                }
-                while (! feof($pipes[2])) {
-                    $errChunk = @fread($pipes[2], 8192);
-                    if ($errChunk === false || $errChunk === '') {
-                        break;
-                    }
-                    $error .= $errChunk;
-                }
-            }
         } finally {
-            if (isset($pipes[1]) && is_resource($pipes[1])) {
-                @fclose($pipes[1]);
+            if (isset($pipes[0]) && is_resource($pipes[0])) {
+                @fclose($pipes[0]);
             }
-            if (isset($pipes[2]) && is_resource($pipes[2])) {
-                @fclose($pipes[2]);
-            }
-            $exitCode = @proc_close($process);
+
+            @proc_close($process);
         }
+
+        $output = @file_get_contents($stdoutFile);
+        $error = @file_get_contents($stderrFile);
+
+        @unlink($stdoutFile);
+        @unlink($stderrFile);
 
         if ($timedOut) {
             return new AiResponse(
                 success: false,
-                output: trim($output),
+                output: trim(is_string($output) ? $output : ''),
                 error: 'Timeout after '.$timeout.'s',
                 exitCode: 124,
             );
@@ -234,8 +216,8 @@ abstract class AbstractAdapter implements AdapterInterface
 
         return new AiResponse(
             success: $exitCode === 0,
-            output: trim($output),
-            error: trim($error),
+            output: trim(is_string($output) ? $output : ''),
+            error: trim(is_string($error) ? $error : ''),
             exitCode: $exitCode,
         );
     }
@@ -255,7 +237,7 @@ abstract class AbstractAdapter implements AdapterInterface
      *   Windows: `taskkill /F /T /PID` walks the tree and force-kills.
      *   Unix:    walk the tree via `pgrep -P`, signal each from leaf upward.
      *
-     * Best-effort throughout — failures here mean the cleanup is partial,
+     * Best-effort throughout - failures here mean the cleanup is partial,
      * not that the caller should crash. The caller has already decided
      * the process is going away.
      */
@@ -297,6 +279,153 @@ abstract class AbstractAdapter implements AdapterInterface
         }
 
         @exec(sprintf('kill -TERM %d 2>/dev/null', $pid));
+    }
+
+    private static function tempPath(string $suffix): string
+    {
+        return sys_get_temp_dir().DIRECTORY_SEPARATOR.'tessera_'.$suffix.'_'.getmypid().'_'.bin2hex(random_bytes(4));
+    }
+
+    /**
+     * @param  list<string>  $argv
+     * @return list<string>
+     */
+    private static function prepareCommand(array $argv, ?string $cwd): array
+    {
+        if (PHP_OS_FAMILY !== 'Windows' || $argv === []) {
+            return $argv;
+        }
+
+        $resolved = self::resolveWindowsBinary($argv[0], $cwd ?? (getcwd() ?: '.'));
+        if ($resolved !== null) {
+            $argv[0] = $resolved;
+        }
+
+        $extension = strtolower(pathinfo($argv[0], PATHINFO_EXTENSION));
+        if (! in_array($extension, ['bat', 'cmd'], true)) {
+            return $argv;
+        }
+
+        return array_merge(
+            [self::windowsCommandProcessor(), '/D', '/S', '/C'],
+            $argv,
+        );
+    }
+
+    private static function windowsCommandProcessor(): string
+    {
+        $comspec = getenv('COMSPEC');
+
+        return is_string($comspec) && $comspec !== '' ? $comspec : 'cmd.exe';
+    }
+
+    private static function resolveWindowsBinary(string $binary, string $cwd): ?string
+    {
+        $extensions = self::windowsExecutableExtensions();
+
+        foreach (self::candidateBinaryPaths($binary, $cwd, $extensions) as $candidate) {
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static function looksLikePath(string $binary): bool
+    {
+        return str_contains($binary, '\\')
+            || str_contains($binary, '/')
+            || preg_match('/^[A-Za-z]:/', $binary) === 1
+            || str_starts_with($binary, '.');
+    }
+
+    private static function normalizeCandidatePath(string $binary, string $cwd): string
+    {
+        if (preg_match('/^[A-Za-z]:/', $binary) === 1 || str_starts_with($binary, '\\\\')) {
+            return $binary;
+        }
+
+        return rtrim($cwd, '\\/').DIRECTORY_SEPARATOR.$binary;
+    }
+
+    /**
+     * @param  list<string>  $extensions
+     * @return list<string>
+     */
+    private static function candidateBinaryPaths(string $binary, string $cwd, array $extensions): array
+    {
+        if (self::looksLikePath($binary)) {
+            $base = self::normalizeCandidatePath($binary, $cwd);
+
+            return self::expandWindowsBinaryCandidates($base, $extensions);
+        }
+
+        $path = getenv('PATH');
+        if (! is_string($path) || $path === '') {
+            return [];
+        }
+
+        $candidates = [];
+
+        foreach (explode(PATH_SEPARATOR, $path) as $dir) {
+            if ($dir === '') {
+                continue;
+            }
+
+            $base = rtrim($dir, '\\/').DIRECTORY_SEPARATOR.$binary;
+            foreach (self::expandWindowsBinaryCandidates($base, $extensions) as $candidate) {
+                $candidates[] = $candidate;
+            }
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * @param  list<string>  $extensions
+     * @return list<string>
+     */
+    private static function expandWindowsBinaryCandidates(string $base, array $extensions): array
+    {
+        if (pathinfo($base, PATHINFO_EXTENSION) !== '') {
+            return [$base];
+        }
+
+        $candidates = [];
+
+        foreach ($extensions as $extension) {
+            $candidates[] = $base.$extension;
+        }
+
+        $candidates[] = $base;
+
+        return $candidates;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function windowsExecutableExtensions(): array
+    {
+        $pathext = getenv('PATHEXT');
+
+        if (! is_string($pathext) || $pathext === '') {
+            return ['.com', '.exe', '.bat', '.cmd'];
+        }
+
+        $extensions = [];
+
+        foreach (explode(';', $pathext) as $extension) {
+            $extension = strtolower(trim($extension));
+            if ($extension === '') {
+                continue;
+            }
+
+            $extensions[] = str_starts_with($extension, '.') ? $extension : '.'.$extension;
+        }
+
+        return $extensions === [] ? ['.com', '.exe', '.bat', '.cmd'] : $extensions;
     }
 
     /**

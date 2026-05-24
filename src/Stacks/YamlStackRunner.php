@@ -103,7 +103,7 @@ final class YamlStackRunner
         (new PlanCompiler)->write($plan, $planPath);
 
         $eventLogPath = $fullPath.DIRECTORY_SEPARATOR.'.tessera'.DIRECTORY_SEPARATOR.'events.jsonl';
-        $eventLog = new EventLog($eventLogPath);
+        $eventLog = new EventLog($eventLogPath, $memory->traceId());
 
         $eventLog->emit(EventType::BuildResume, [
             'stack' => $stackName,

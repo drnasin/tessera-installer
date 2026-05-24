@@ -359,6 +359,31 @@ final class PlanExecutorTest extends TestCase
         $this->assertStringContainsString('nonexistent', $failedSteps[0]->errorMessage);
     }
 
+    #[Test]
+    public function adapter_exception_is_converted_into_step_and_build_failure(): void
+    {
+        $adapter = $this->fakeAdapter('fake', function (): AiResponse {
+            throw new \RuntimeException('adapter exploded');
+        });
+
+        $executor = $this->makeExecutor($adapter);
+        $plan = (new PlanCompiler)->compile('test', [
+            PlanStep::build('a', 'A', Complexity::SIMPLE, 'body', adapterHint: 'fake'),
+        ]);
+
+        $result = $executor->execute($plan, $this->tmpDir, new RenderContext);
+
+        $this->assertFalse($result->success);
+        $this->assertCount(1, $result->failedSteps());
+        $this->assertStringContainsString('adapter exploded', $result->failedSteps()[0]->errorMessage);
+
+        $events = $this->readEvents();
+        $types = array_map(fn ($e) => $e['type'], $events);
+
+        $this->assertContains(EventType::StepFail->value, $types);
+        $this->assertContains(EventType::BuildFail->value, $types);
+    }
+
     private function makeExecutor(AdapterInterface $adapter): PlanExecutor
     {
         $registry = new AdapterRegistry([$adapter]);

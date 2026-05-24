@@ -67,6 +67,24 @@ final class AbstractAdapterTimeoutTest extends TestCase
     }
 
     #[Test]
+    public function large_output_does_not_deadlock_the_child_process(): void
+    {
+        $adapter = $this->makeProbeAdapter();
+        $script = 'for ($i = 0; $i < 40000; $i++) { fwrite(STDOUT, "1234567890"); } fwrite(STDERR, "warning");';
+        $command = [PHP_BINARY, '-r', $script];
+
+        $started = microtime(true);
+        $response = $this->invokeRunProcess($adapter, $command, null, null, 10);
+        $elapsed = microtime(true) - $started;
+
+        $this->assertLessThan(6.0, $elapsed, "runProcess should not stall on large output, took {$elapsed}s");
+        $this->assertTrue($response->success);
+        $this->assertSame(0, $response->exitCode);
+        $this->assertGreaterThan(100_000, strlen($response->output));
+        $this->assertStringContainsString('warning', $response->error);
+    }
+
+    #[Test]
     public function kill_process_tree_handles_invalid_pid_gracefully(): void
     {
         $method = new ReflectionMethod(AbstractAdapter::class, 'killProcessTree');
