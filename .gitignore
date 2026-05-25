@@ -6,6 +6,7 @@ composer.lock
 .vscode/
 .claude/
 .ai/
+.agents/skills/.nimbalyst-generated/
 *.swp
 TEST_*.md
 TESSERA_WEBSITE.md
