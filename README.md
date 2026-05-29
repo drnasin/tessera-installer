@@ -67,7 +67,7 @@ Every stack is described in YAML. The same engine drives them all. [Authoring a 
 ## What you get out of the box
 
 - **Inspectable plans.** `tessera plan compile/show/diff` — no tokens spent until you say go.
-- **Quality gates.** Each step declares post-checks (`exists_any`, `exists_all`, `php_syntax`, …) so the AI saying "done!" against an empty directory fails loudly.
+- **Quality gates.** Each step declares post-checks (`exists_any`, `exists_all`) so the AI saying "done!" against an empty directory fails loudly.
 - **Skippable enrichment.** Polish steps and SETUP.md generators that hit a transient rate limit don't abort a 25-minute build.
 - **Build trace.** Every run leaves `.tessera/state.json` + `.tessera/events.jsonl` + `.tessera/plan.json`. Post-mortem any build with `jq` and a few seconds.
 - **Resume.** Crash, Ctrl+C, network drop — run the same command, pick up where it left off. Atomic state writes survive interrupts.

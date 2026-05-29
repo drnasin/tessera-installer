@@ -142,6 +142,10 @@ final class StackManifestLoaderTest extends TestCase
     #[Test]
     public function gates_pass_through_as_arrays(): void
     {
+        // The loader validates gate *types* but is intentionally permissive
+        // about extra keys inside a gate (e.g. min_count) so the Gate taxonomy
+        // can keep evolving. This proves known types pass through and that an
+        // arbitrary extra key (min_count) survives into the parsed gate.
         $manifest = (new StackManifestLoader)->loadFromString(<<<YAML
             name: gated
             label: "Gated"
@@ -151,15 +155,34 @@ final class StackManifestLoaderTest extends TestCase
                 complexity: simple
                 prompt: "A"
                 gates:
-                  - type: glob
-                    pattern: "*.php"
+                  - type: exists_any
+                    patterns: ["*.php"]
                     min_count: 3
-                  - type: php_syntax
+                  - type: exists_all
             YAML);
 
         $this->assertCount(2, $manifest->steps[0]->gates);
-        $this->assertSame('glob', $manifest->steps[0]->gates[0]['type']);
+        $this->assertSame('exists_any', $manifest->steps[0]->gates[0]['type']);
         $this->assertSame(3, $manifest->steps[0]->gates[0]['min_count']);
+    }
+
+    #[Test]
+    public function rejects_unimplemented_gate_type(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage("unknown gate type 'glob'");
+
+        (new StackManifestLoader)->loadFromString(<<<YAML
+            name: gated
+            label: "Gated"
+            description: "x"
+            steps:
+              - id: a
+                complexity: simple
+                prompt: "A"
+                gates:
+                  - type: glob
+            YAML);
     }
 
     #[Test]

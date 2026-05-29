@@ -5,6 +5,29 @@ All notable changes to Tessera Installer are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Manifest gate validation now matches the executor. `StackManifestLoader`
+  previously accepted the gate types `php_syntax` and `glob`, but
+  `GateEvaluator` never implemented them — a custom stack could compile a
+  manifest that then failed at execution with "Unknown gate type". The
+  unimplemented types are removed from `StackManifestLoader::ALLOWED_GATE_TYPES`
+  (leaving `exists_any` and `exists_all`), so an unsupported gate is now caught
+  at manifest load instead of mid-build. A parity test (`GateValidationParityTest`)
+  enforces that every allowed gate type is executable. No bundled stack used the
+  removed types. (#6)
+
+### Changed
+
+- **Breaking for custom stacks only.** A `stacks/*.yaml` manifest that declared
+  a `php_syntax` or `glob` gate type now fails to load with a clear "unknown gate
+  type" error. Those gate types were never executable, so any such manifest was
+  already broken at build time; the failure simply moves earlier. Bundled stacks
+  are unaffected. Note `exists_any`/`exists_all` already support `*`/`?`/`[` glob
+  patterns inside their `patterns`/`paths` lists.
+
 ## [3.11.2] – 2026-04-29
 
 Polymorphic block builder hardening, driven by a real bug surfaced in the

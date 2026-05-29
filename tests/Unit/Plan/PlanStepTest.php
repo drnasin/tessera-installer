@@ -38,7 +38,7 @@ final class PlanStepTest extends TestCase
             adapterHint: 'claude',
             modelHint: 'claude-sonnet-4-20250514',
             dependencies: ['models'],
-            gates: [['type' => 'php_syntax']],
+            gates: [['type' => 'exists_all', 'paths' => ['app/Models/User.php']]],
         );
 
         $restored = PlanStep::fromArray($original->toArray());
