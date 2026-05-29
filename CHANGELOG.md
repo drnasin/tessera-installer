@@ -7,6 +7,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.11.4] – 2026-05-30
+
+Security and quality-gate hardening pass — closes the open audit issues
+(#3–#7) surfaced after the v3.11.x subprocess migration.
+
+### Security
+
+- **Per-provider environment isolation for every AI subprocess.** Both the
+  newer adapter path and the legacy `ToolRouter::primary()->execute()` path
+  (used by `NewCommand`'s requirements/stack/dependency prompts) now build the
+  child environment from an allowlist instead of inheriting the full
+  environment minus a few nesting markers. Each AI CLI receives only its own
+  provider's credentials: `ANTHROPIC_API_KEY` never reaches Codex,
+  `OPENAI_API_KEY` never reaches Claude, `GOOGLE_API_KEY`/`GEMINI_API_KEY`
+  never reach the others. Unrelated secrets (`GITHUB_TOKEN`, `COMPOSER_AUTH`,
+  the ssh-agent socket, `GIT_SSH_COMMAND`, token-bearing npm config) are split
+  into a build-only passthrough and never reach any AI CLI. Detection probes
+  run with no credentials at all. `AiTool` and the adapters now share a single
+  `EnvPolicy` chokepoint (`forAiTool()` / `minimal()`). (#4)
+
 ### Fixed
 
 - Manifest gate validation now matches the executor. `StackManifestLoader`
@@ -18,6 +38,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at manifest load instead of mid-build. A parity test (`GateValidationParityTest`)
   enforces that every allowed gate type is executable. No bundled stack used the
   removed types. (#6)
+- The Laravel stack no longer reports `tests_fixed` as passed when the generated
+  project's tests still fail. `runAndFixTests()` now returns a result; on failure
+  after the max fix attempts, the failure (plus a truncated test-output excerpt)
+  is recorded to `.tessera/state.json` and surfaced in the completion output and
+  step summary instead of a silent green "done". The install still finishes — a
+  generated app with some failing tests is usable — but completion output never
+  claims tests passed when they did not. (#5)
 
 ### Changed
 
@@ -27,6 +54,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   already broken at build time; the failure simply moves earlier. Bundled stacks
   are unaffected. Note `exists_any`/`exists_all` already support `*`/`?`/`[` glob
   patterns inside their `patterns`/`paths` lists.
+- `bin/tessera` no longer carries a partial "standalone" autoload fallback that
+  manually required only a subset of classes. When Composer's autoloader is
+  absent the CLI now fails fast with an actionable message (run `composer
+  install`) instead of starting and fataling mid-command on a missing class. (#7)
+
+### Removed
+
+- Deleted the unused string-command runners `Console::exec()` /
+  `Console::execSilent()` and their private `cleanEnv()` helper. They executed
+  shell-string commands under the same denylist-env leak fixed in #4 and had
+  zero callers — all subprocess execution had already migrated to the argv
+  variants (`execArgv()` / `execSilentArgv()`), which default to the
+  allowlist-based `EnvPolicy::buildTool()`. Removing them prevents the leaky
+  helper from being reintroduced.
 
 ## [3.11.2] – 2026-04-29
 
