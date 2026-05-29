@@ -35,20 +35,19 @@ foreach ($autoloaders as $autoloader) {
 }
 
 if (! $loaded) {
-    // Fallback: manual require for standalone usage without composer autoload
-    $src = dirname(__DIR__) . '/src';
-    require $src . '/AiResponse.php';
-    require $src . '/AiTool.php';
-    require $src . '/Complexity.php';
-    require $src . '/Cli/NewCommandArgs.php';
-    require $src . '/Cli/ProjectDirectoryName.php';
-    require $src . '/ToolSelection.php';
-    require $src . '/ToolRouter.php';
-    require $src . '/Console.php';
-    require $src . '/SystemInfo.php';
-    require $src . '/Memory.php';
-    require $src . '/StepRunner.php';
-    require $src . '/NewCommand.php';
+    // Tessera is a Composer-distributed package and depends on Composer's
+    // autoloader. Fail fast with an actionable message rather than starting
+    // up and crashing later on a missing class.
+    fwrite(STDERR, <<<'MSG'
+        Tessera could not find Composer's autoloader.
+
+        Install dependencies first:
+          - Local checkout:    composer install
+          - Global install:    composer global require tessera/installer
+
+        MSG);
+
+    exit(1);
 }
 
 use Tessera\Installer\AiTool;
