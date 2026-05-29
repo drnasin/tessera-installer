@@ -42,15 +42,4 @@ final class CodexAdapter extends AbstractAdapter
     {
         return $model === null;
     }
-
-    protected function buildChildEnv(): array
-    {
-        $env = parent::buildChildEnv();
-
-        foreach (['ANTHROPIC_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY'] as $other) {
-            unset($env[$other]);
-        }
-
-        return $env;
-    }
 }

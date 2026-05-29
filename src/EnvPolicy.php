@@ -29,6 +29,8 @@ final class EnvPolicy
     private const BASE_ALLOWLIST = [
         'PATH',
         'HOME',
+        'HOMEDRIVE',
+        'HOMEPATH',
         'USERPROFILE',
         'SYSTEMROOT',
         'WINDIR',
@@ -50,8 +52,33 @@ final class EnvPolicy
         'TERM',
         'USER',
         'USERNAME',
+        'USERDOMAIN',
         'LOGNAME',
         'PWD',
+        // Network reachability — corporate proxies and custom CA bundles. These
+        // are configuration, not credentials, and an AI CLI (or any subprocess)
+        // that needs to reach the network behind a proxy will hang without them.
+        // The legacy denylist passed these through implicitly; the allowlist must
+        // keep doing so or proxied/corp environments regress.
+        'HTTP_PROXY',
+        'HTTPS_PROXY',
+        'NO_PROXY',
+        'http_proxy',
+        'https_proxy',
+        'no_proxy',
+        'ALL_PROXY',
+        'all_proxy',
+        'SSL_CERT_FILE',
+        'SSL_CERT_DIR',
+        'NODE_EXTRA_CA_CERTS',
+        // Node toolchain locators — the AI CLIs (claude/gemini) are Node binaries
+        // and may rely on these to find their runtime/modules, especially under
+        // nvm-managed installs.
+        'NODE_PATH',
+        'NPM_CONFIG_PREFIX',
+        'NVM_HOME',
+        'NVM_SYMLINK',
+        'NVM_DIR',
     ];
 
     /**
@@ -65,16 +92,26 @@ final class EnvPolicy
             'ANTHROPIC_API_KEY',
             'ANTHROPIC_AUTH_TOKEN',
             'CLAUDE_CONFIG_DIR',
+            // Endpoint/model overrides — provider-scoped configuration that
+            // points the CLI at a proxy/gateway or pins a model. Passing these
+            // only to the matching provider cannot leak across providers.
+            'ANTHROPIC_BASE_URL',
+            'ANTHROPIC_MODEL',
         ],
         'gemini' => [
             'GOOGLE_API_KEY',
             'GEMINI_API_KEY',
             'GOOGLE_APPLICATION_CREDENTIALS',
+            'GOOGLE_CLOUD_PROJECT',
+            'GCLOUD_PROJECT',
+            'CLOUDSDK_CONFIG',
         ],
         'codex' => [
             'OPENAI_API_KEY',
             'OPENAI_ORG_ID',
             'OPENAI_PROJECT',
+            'OPENAI_BASE_URL',
+            'CODEX_HOME',
         ],
     ];
 

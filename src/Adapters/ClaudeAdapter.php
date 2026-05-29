@@ -16,8 +16,9 @@ namespace Tessera\Installer\Adapters;
  *     setting `TESSERA_SAFE_AI=1` in the environment, in which case Claude
  *     pauses for approval on each action and the installer fails loudly
  *     rather than silently hanging.
- *   - Per-tool environment isolation: only ANTHROPIC_* keys are passed
- *     through. OpenAI / Google credentials never reach this child process.
+ *   - Per-tool environment isolation is enforced centrally by AbstractAdapter
+ *     via EnvPolicy::forAiTool('claude'): only Anthropic credentials reach this
+ *     child. OpenAI / Google credentials and unrelated secrets never do.
  */
 final class ClaudeAdapter extends AbstractAdapter
 {
@@ -54,22 +55,6 @@ final class ClaudeAdapter extends AbstractAdapter
     public function supportsModel(?string $model): bool
     {
         return true;
-    }
-
-    /**
-     * Drop credentials of OTHER providers so they can never leak into the
-     * Claude child process. Same intent as the legacy AiTool::cleanEnv()
-     * shape but narrowed per-provider.
-     */
-    protected function buildChildEnv(): array
-    {
-        $env = parent::buildChildEnv();
-
-        foreach (['OPENAI_API_KEY', 'OPENAI_ORG_ID', 'GOOGLE_API_KEY', 'GEMINI_API_KEY'] as $other) {
-            unset($env[$other]);
-        }
-
-        return $env;
     }
 
     /**

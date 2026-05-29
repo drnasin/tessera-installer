@@ -101,7 +101,11 @@ final class AbstractAdapterTimeoutTest extends TestCase
     {
         $method = new ReflectionMethod(AbstractAdapter::class, 'runProcess');
 
-        return $method->invoke($adapter, $command, $stdin, $cwd, $timeout);
+        // runProcess now requires the caller to supply the filtered child env.
+        // These timeout/output tests only need PATH/locale to spawn php/echo.
+        $env = \Tessera\Installer\EnvPolicy::minimal()->apply();
+
+        return $method->invoke($adapter, $command, $stdin, $cwd, $timeout, $env);
     }
 
     /**
