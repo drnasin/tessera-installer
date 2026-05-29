@@ -33,6 +33,9 @@ final class AiToolEnvPolicyTest extends TestCase
         'GOOGLE_API_KEY' => 'goog-fake',
         'GEMINI_API_KEY' => 'gem-fake',
         'GITHUB_TOKEN' => 'ghp-fake',
+        // Build/shell credentials that must never reach the legacy AiTool child.
+        'COMPOSER_AUTH' => '{"github-oauth":{"github.com":"ghp-in-composer-auth"}}',
+        'SSH_AUTH_SOCK' => '/tmp/ssh-agent.fake.sock',
     ];
 
     protected function setUp(): void
@@ -66,6 +69,8 @@ final class AiToolEnvPolicyTest extends TestCase
         $this->assertArrayNotHasKey('GOOGLE_API_KEY', $env);
         $this->assertArrayNotHasKey('GEMINI_API_KEY', $env);
         $this->assertArrayNotHasKey('GITHUB_TOKEN', $env);
+        $this->assertArrayNotHasKey('COMPOSER_AUTH', $env);
+        $this->assertArrayNotHasKey('SSH_AUTH_SOCK', $env);
     }
 
     #[Test]

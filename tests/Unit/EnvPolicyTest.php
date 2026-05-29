@@ -41,6 +41,27 @@ final class EnvPolicyTest extends TestCase
         'GOOGLE_API_KEY' => 'goog-fake',
         'GEMINI_API_KEY' => 'gem-fake',
         'GITHUB_TOKEN' => 'ghp-fake-unrelated-secret',
+        // Build/shell credentials that must NEVER reach an AI child (issue #4
+        // Codex review): COMPOSER_AUTH carries a GitHub OAuth token in practice,
+        // SSH_AUTH_SOCK is a live signing handle to the user's SSH keys, and
+        // GIT_SSH_COMMAND can embed an identity file or wrapper command.
+        'COMPOSER_AUTH' => '{"github-oauth":{"github.com":"ghp-in-composer-auth"}}',
+        'SSH_AUTH_SOCK' => '/tmp/ssh-agent.fake.sock',
+        'SSH_AGENT_PID' => '4242',
+        'GIT_SSH_COMMAND' => 'ssh -i /home/fake/.ssh/id_ed25519',
+    ];
+
+    /**
+     * Build/shell credentials (or credential-access handles) that the AI-tool
+     * policy must filter out. The build-tool policy keeps them.
+     *
+     * @var array<int, string>
+     */
+    private const BUILD_ONLY_CREDENTIALS = [
+        'COMPOSER_AUTH',
+        'SSH_AUTH_SOCK',
+        'SSH_AGENT_PID',
+        'GIT_SSH_COMMAND',
     ];
 
     /** @var array<string, string|false> Original values to restore in tearDown. */
@@ -81,6 +102,7 @@ final class EnvPolicyTest extends TestCase
         $this->assertArrayNotHasKey('GOOGLE_API_KEY', $env);
         $this->assertArrayNotHasKey('GEMINI_API_KEY', $env);
         $this->assertArrayNotHasKey('GITHUB_TOKEN', $env);
+        $this->assertNoBuildOnlyCredentials($env);
     }
 
     #[Test]
@@ -97,6 +119,7 @@ final class EnvPolicyTest extends TestCase
         $this->assertArrayNotHasKey('GOOGLE_API_KEY', $env);
         $this->assertArrayNotHasKey('GEMINI_API_KEY', $env);
         $this->assertArrayNotHasKey('GITHUB_TOKEN', $env);
+        $this->assertNoBuildOnlyCredentials($env);
     }
 
     #[Test]
@@ -113,6 +136,7 @@ final class EnvPolicyTest extends TestCase
         $this->assertArrayNotHasKey('OPENAI_ORG_ID', $env);
         $this->assertArrayNotHasKey('OPENAI_PROJECT', $env);
         $this->assertArrayNotHasKey('GITHUB_TOKEN', $env);
+        $this->assertNoBuildOnlyCredentials($env);
     }
 
     #[Test]
@@ -202,6 +226,46 @@ final class EnvPolicyTest extends TestCase
         $this->assertArrayHasKey('PATH', $env);
     }
 
+    #[Test]
+    public function build_and_shell_credentials_never_reach_any_ai_child(): void
+    {
+        // The core issue #4 leak: COMPOSER_AUTH (GitHub token), the ssh-agent
+        // handle, and GIT_SSH_COMMAND must be filtered from every AI policy —
+        // an AI CLI has no business holding the user's Git/SSH/Composer creds.
+        foreach (['claude', 'codex', 'gemini'] as $tool) {
+            $env = $this->upperKeys(EnvPolicy::forAiTool($tool)->apply());
+            $this->assertNoBuildOnlyCredentials($env, "forAiTool('{$tool}')");
+        }
+
+        $this->assertNoBuildOnlyCredentials(
+            $this->upperKeys(EnvPolicy::minimal()->apply()),
+            'minimal()',
+        );
+    }
+
+    #[Test]
+    public function build_tool_policy_keeps_build_and_shell_credentials(): void
+    {
+        // Counterpart guard: moving these out of the AI policy must NOT remove
+        // them from the build-tool policy, or composer/npm/git lose their auth.
+        $env = $this->upperKeys(EnvPolicy::buildTool()->apply());
+
+        foreach (self::BUILD_ONLY_CREDENTIALS as $var) {
+            $this->assertArrayHasKey(
+                $var,
+                $env,
+                "{$var} must still reach build/shell tools via buildTool().",
+            );
+        }
+
+        // buildTool() still carries no AI provider keys.
+        $this->assertArrayNotHasKey('ANTHROPIC_API_KEY', $env);
+        $this->assertArrayNotHasKey('OPENAI_API_KEY', $env);
+        $this->assertArrayNotHasKey('GOOGLE_API_KEY', $env);
+        $this->assertArrayNotHasKey('GEMINI_API_KEY', $env);
+        $this->assertArrayNotHasKey('GITHUB_TOKEN', $env);
+    }
+
     /**
      * Re-key an env map by uppercase name. apply() preserves the original key
      * case (correct for the child process); tests assert on canonical uppercase
@@ -218,5 +282,23 @@ final class EnvPolicyTest extends TestCase
         }
 
         return $result;
+    }
+
+    /**
+     * Assert none of the build/shell credentials reached the given (uppercased)
+     * env. These are filtered from every AI-tool and detection policy.
+     *
+     * @param  array<string, string>  $upperEnv  Env already re-keyed via upperKeys().
+     */
+    private function assertNoBuildOnlyCredentials(array $upperEnv, string $context = ''): void
+    {
+        $suffix = $context === '' ? '' : " ({$context})";
+        foreach (self::BUILD_ONLY_CREDENTIALS as $var) {
+            $this->assertArrayNotHasKey(
+                $var,
+                $upperEnv,
+                "{$var} must not reach an AI child{$suffix}.",
+            );
+        }
     }
 }
