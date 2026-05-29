@@ -147,61 +147,6 @@ final class Console
     }
 
     /**
-     * Run a shell command with live output.
-     * Environment is cleaned to prevent leaking secrets to subprocesses.
-     */
-    public static function exec(string $command, ?string $workingDir = null): int
-    {
-        $descriptors = [
-            0 => STDIN,
-            1 => STDOUT,
-            2 => STDERR,
-        ];
-
-        $process = proc_open($command, $descriptors, $pipes, $workingDir, self::cleanEnv());
-
-        if (! is_resource($process)) {
-            self::error("Could not start: {$command}");
-
-            return 1;
-        }
-
-        return proc_close($process);
-    }
-
-    /**
-     * Run a shell command silently and return output.
-     */
-    public static function execSilent(string $command, ?string $workingDir = null): array
-    {
-        $descriptors = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
-
-        $process = proc_open($command, $descriptors, $pipes, $workingDir, self::cleanEnv());
-
-        if (! is_resource($process)) {
-            return ['output' => "Could not start: {$command}", 'exit' => 1];
-        }
-
-        fclose($pipes[0]);
-
-        $output = stream_get_contents($pipes[1]);
-        $stderr = stream_get_contents($pipes[2]);
-
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-
-        $exitCode = proc_close($process);
-
-        $result = trim(($output ?: '').($stderr ? "\n".$stderr : ''));
-
-        return ['output' => $result, 'exit' => $exitCode];
-    }
-
-    /**
      * Run an argv command and print buffered stdout/stderr after exit.
      *
      * @param  array<int, string>  $argv
@@ -257,35 +202,6 @@ final class Console
             'output' => $result->combinedOutput(),
             'exit' => $result->exitCode,
         ];
-    }
-
-    /**
-     * Build clean environment without AI nesting markers or secrets.
-     *
-     * @return array<string, string>
-     */
-    private static function cleanEnv(): array
-    {
-        $env = getenv();
-
-        if (! is_array($env)) {
-            return [];
-        }
-
-        // Remove AI nesting protection vars
-        $remove = [
-            'CLAUDECODE',
-            'CLAUDE_CODE',
-            'CLAUDE_CODE_SSE_PORT',
-            'CLAUDE_CODE_ENTRYPOINT',
-            'VIPSHOME',
-        ];
-
-        foreach ($remove as $var) {
-            unset($env[$var]);
-        }
-
-        return $env;
     }
 
     private static function commandExecutor(): CommandExecutor

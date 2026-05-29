@@ -88,7 +88,7 @@ final class PythonStack implements StackInterface
     public function preflight(): array
     {
         $missing = [];
-        $python = Console::execSilent('python3 --version');
+        $python = Console::execSilentArgv(['python3', '--version'], env: EnvPolicy::minimal());
         if ($python['exit'] !== 0) {
             $missing[] = 'Python 3.10+ (https://python.org)';
         }
