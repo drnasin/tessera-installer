@@ -29,9 +29,8 @@ use Tessera\Installer\Complexity;
  *       model_hint: claude-opus-4-20250514
  *       dependencies: []
  *       gates:
- *         - type: glob
- *           pattern: app/Models/*.php
- *           min_count: 3
+ *         - type: exists_any
+ *           patterns: [app/Models/*.php]
  *
  * Validation philosophy: reject early, reject loud. The parser refuses
  * unknown top-level keys (forward-compat would mask typos), but is
@@ -63,11 +62,18 @@ final class StackManifestLoader
         'timeout',
     ];
 
-    private const ALLOWED_GATE_TYPES = [
+    /**
+     * Gate types the loader accepts. This list MUST stay in lockstep with the
+     * types {@see \Tessera\Installer\Plan\GateEvaluator::evaluate()} actually
+     * implements — a type allowed here but unimplemented there would compile a
+     * manifest that then fails at execution with "Unknown gate type". The
+     * GateValidationParityTest enforces this invariant.
+     *
+     * @var list<string>
+     */
+    public const ALLOWED_GATE_TYPES = [
         'exists_any',
         'exists_all',
-        'php_syntax',
-        'glob',
     ];
 
     public function loadFromFile(string $path): StackManifest

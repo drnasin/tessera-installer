@@ -51,7 +51,7 @@ final class GateEvaluator
                     $stepId,
                     $type,
                     $severity,
-                    "Unknown gate type '{$type}' (Sprint 2 introduces more types)",
+                    "Unknown gate type '{$type}'. Supported types: exists_any, exists_all.",
                 ),
             };
 
