@@ -129,8 +129,6 @@ final class EnvPolicy
      */
     private const AI_SAFE_PASSTHROUGH = [
         'NODE_OPTIONS',
-        'NPM_CONFIG_REGISTRY',
-        'NPM_CONFIG_CACHE',
         'XDG_CONFIG_HOME',
         'XDG_DATA_HOME',
         'XDG_CACHE_HOME',
@@ -176,6 +174,12 @@ final class EnvPolicy
         'SSH_AGENT_PID',
         'PHP_INI_SCAN_DIR',
         'PHPRC',
+        // npm install-time configuration: the registry URL can embed an auth
+        // token and is only consulted by `npm install`, never by an AI CLI at
+        // prompt-execution time. (NPM_CONFIG_PREFIX stays in BASE_ALLOWLIST — it
+        // is a binary locator, and NODE_OPTIONS stays AI-safe — it is runtime.)
+        'NPM_CONFIG_REGISTRY',
+        'NPM_CONFIG_CACHE',
     ];
 
     /**

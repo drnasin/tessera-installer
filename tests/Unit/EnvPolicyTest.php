@@ -48,7 +48,11 @@ final class EnvPolicyTest extends TestCase
         'COMPOSER_AUTH' => '{"github-oauth":{"github.com":"ghp-in-composer-auth"}}',
         'SSH_AUTH_SOCK' => '/tmp/ssh-agent.fake.sock',
         'SSH_AGENT_PID' => '4242',
+        'GIT_SSH' => 'C:\\fake\\plink.exe',
         'GIT_SSH_COMMAND' => 'ssh -i /home/fake/.ssh/id_ed25519',
+        // npm registry URL can embed an auth token — install-time only, must not
+        // reach an AI child.
+        'NPM_CONFIG_REGISTRY' => 'https://user:tok@registry.internal/',
     ];
 
     /**
@@ -61,7 +65,9 @@ final class EnvPolicyTest extends TestCase
         'COMPOSER_AUTH',
         'SSH_AUTH_SOCK',
         'SSH_AGENT_PID',
+        'GIT_SSH',
         'GIT_SSH_COMMAND',
+        'NPM_CONFIG_REGISTRY',
     ];
 
     /** @var array<string, string|false> Original values to restore in tearDown. */
