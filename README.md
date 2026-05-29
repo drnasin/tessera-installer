@@ -73,7 +73,7 @@ Every stack is described in YAML. The same engine drives them all. [Authoring a 
 - **Resume.** Crash, Ctrl+C, network drop — run the same command, pick up where it left off. Atomic state writes survive interrupts.
 - **Cross-OS process control.** Windows `taskkill /F /T`, Unix `pgrep -P` + `posix_kill`. Tessera never leaves zombie AI subprocesses pinned to your terminal.
 - **Plan-aware AI routing.** Claude Max gets all the steps; free-tier accounts hit fallback chains. Rate limits cause a 2-minute cooldown and a tool switch, not a build crash.
-- **AI tool isolation.** Each adapter sees only its own credentials — `ANTHROPIC_API_KEY` never reaches Codex; `OPENAI_API_KEY` never reaches Claude.
+- **AI tool isolation.** Every AI subprocess — whether spawned through the adapter path or the legacy router — runs under an allowlist that passes only that provider's own credentials. `ANTHROPIC_API_KEY` never reaches Codex; `OPENAI_API_KEY` never reaches Claude; and unrelated secrets (`GITHUB_TOKEN`, `COMPOSER_AUTH`, the ssh-agent socket, CI tokens) never reach any AI CLI. Detection probes run with no credentials at all.
 - **Pluggable adapters.** [Adding Groq, Ollama, or your own AI →](https://tessera-ai.net/docs/architecture/adapter-system)
 
 ## Quick reference — CLI commands

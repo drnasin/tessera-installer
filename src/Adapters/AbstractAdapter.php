@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tessera\Installer\Adapters;
 
 use Tessera\Installer\AiResponse;
+use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Events\EventLog;
 use Tessera\Installer\Events\EventType;
 
@@ -16,8 +17,9 @@ use Tessera\Installer\Events\EventType;
  * usesStdin() - and inherit:
  *
  *   - subprocess execution with timeout
- *   - environment scrubbing (drops AI-nesting markers and inherited
- *     credentials of OTHER providers)
+ *   - per-provider environment isolation via EnvPolicy: an execute call sees
+ *     ONLY its own provider's credentials (forAiTool), a detection probe sees
+ *     none (minimal); AI-nesting markers are always stripped
  *   - cached availability/version probing
  *   - uniform event emission to the optional EventLog
  *
@@ -94,8 +96,13 @@ abstract class AbstractAdapter implements AdapterInterface
             'step' => $context->stepName,
         ], $context->traceId);
 
+        // Per-provider isolation: this child sees ONLY its own provider's
+        // credentials. Cross-provider keys and unrelated secrets (GITHUB_TOKEN,
+        // CI tokens) are filtered out by the EnvPolicy allowlist.
+        $env = EnvPolicy::forAiTool($this->name())->apply();
+
         $startedAt = microtime(true);
-        $response = $this->runProcess($command, $stdinPayload, $context->workingDir, $context->timeout);
+        $response = $this->runProcess($command, $stdinPayload, $context->workingDir, $context->timeout, $env);
         $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
 
         $this->emitCompletion($context->eventLog, $context, $response, $durationMs);
@@ -109,7 +116,11 @@ abstract class AbstractAdapter implements AdapterInterface
      */
     protected function probeVersion(): ?string
     {
-        $result = $this->runProcess($this->detectCommand(), null, null, 5);
+        // A `--version` probe runs before any provider is selected and must
+        // receive NO credentials — minimal() passes only PATH/locale/infra.
+        $env = EnvPolicy::minimal()->apply();
+
+        $result = $this->runProcess($this->detectCommand(), null, null, 5, $env);
 
         if (! $result->success) {
             return null;
@@ -128,9 +139,16 @@ abstract class AbstractAdapter implements AdapterInterface
      * pipe deadlocks and allows verbose AI runs to emit large output without
      * blocking the child process.
      *
+     * The caller MUST supply the already-filtered child environment (via
+     * EnvPolicy). There is no implicit env-building fallback here — that keeps
+     * credential isolation a structural property: an execute call passes
+     * forAiTool(), a detection probe passes minimal(), and neither can silently
+     * inherit the other's environment.
+     *
      * @param  list<string>  $command
+     * @param  array<string, string>  $env  Filtered child environment.
      */
-    protected function runProcess(array $command, ?string $stdin, ?string $workingDir, int $timeout): AiResponse
+    protected function runProcess(array $command, ?string $stdin, ?string $workingDir, int $timeout, array $env): AiResponse
     {
         $cwd = $workingDir ?? (getcwd() ?: null);
         $preparedCommand = self::prepareCommand($command, $cwd);
@@ -142,7 +160,6 @@ abstract class AbstractAdapter implements AdapterInterface
             2 => ['file', $stderrFile, 'w'],
         ];
 
-        $env = $this->buildChildEnv();
         $process = @proc_open($preparedCommand, $descriptors, $pipes, $cwd, $env);
 
         if (! is_resource($process)) {
@@ -426,36 +443,6 @@ abstract class AbstractAdapter implements AdapterInterface
         }
 
         return $extensions === [] ? ['.com', '.exe', '.bat', '.cmd'] : $extensions;
-    }
-
-    /**
-     * Strip AI-nesting markers so a child Claude process does not detect a
-     * parent Claude session and refuse to run. Each concrete adapter narrows
-     * further if it wants to drop other providers' credentials.
-     *
-     * @return array<string, string>
-     */
-    protected function buildChildEnv(): array
-    {
-        $env = getenv();
-
-        if (! is_array($env)) {
-            return [];
-        }
-
-        $stripped = [
-            'CLAUDECODE',
-            'CLAUDE_CODE',
-            'CLAUDE_CODE_SSE_PORT',
-            'CLAUDE_CODE_ENTRYPOINT',
-            'VIPSHOME',
-        ];
-
-        foreach ($stripped as $var) {
-            unset($env[$var]);
-        }
-
-        return $env;
     }
 
     private function emitCompletion(?EventLog $log, AdapterContext $context, AiResponse $response, int $durationMs): void

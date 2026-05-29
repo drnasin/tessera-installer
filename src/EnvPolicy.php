@@ -29,6 +29,8 @@ final class EnvPolicy
     private const BASE_ALLOWLIST = [
         'PATH',
         'HOME',
+        'HOMEDRIVE',
+        'HOMEPATH',
         'USERPROFILE',
         'SYSTEMROOT',
         'WINDIR',
@@ -50,8 +52,33 @@ final class EnvPolicy
         'TERM',
         'USER',
         'USERNAME',
+        'USERDOMAIN',
         'LOGNAME',
         'PWD',
+        // Network reachability — corporate proxies and custom CA bundles. These
+        // are configuration, not credentials, and an AI CLI (or any subprocess)
+        // that needs to reach the network behind a proxy will hang without them.
+        // The legacy denylist passed these through implicitly; the allowlist must
+        // keep doing so or proxied/corp environments regress.
+        'HTTP_PROXY',
+        'HTTPS_PROXY',
+        'NO_PROXY',
+        'http_proxy',
+        'https_proxy',
+        'no_proxy',
+        'ALL_PROXY',
+        'all_proxy',
+        'SSL_CERT_FILE',
+        'SSL_CERT_DIR',
+        'NODE_EXTRA_CA_CERTS',
+        // Node toolchain locators — the AI CLIs (claude/gemini) are Node binaries
+        // and may rely on these to find their runtime/modules, especially under
+        // nvm-managed installs.
+        'NODE_PATH',
+        'NPM_CONFIG_PREFIX',
+        'NVM_HOME',
+        'NVM_SYMLINK',
+        'NVM_DIR',
     ];
 
     /**
@@ -65,39 +92,43 @@ final class EnvPolicy
             'ANTHROPIC_API_KEY',
             'ANTHROPIC_AUTH_TOKEN',
             'CLAUDE_CONFIG_DIR',
+            // Endpoint/model overrides — provider-scoped configuration that
+            // points the CLI at a proxy/gateway or pins a model. Passing these
+            // only to the matching provider cannot leak across providers.
+            'ANTHROPIC_BASE_URL',
+            'ANTHROPIC_MODEL',
         ],
         'gemini' => [
             'GOOGLE_API_KEY',
             'GEMINI_API_KEY',
             'GOOGLE_APPLICATION_CREDENTIALS',
+            'GOOGLE_CLOUD_PROJECT',
+            'GOOGLE_CLOUD_LOCATION',
+            'GCLOUD_PROJECT',
+            'CLOUDSDK_CONFIG',
         ],
         'codex' => [
             'OPENAI_API_KEY',
             'OPENAI_ORG_ID',
             'OPENAI_PROJECT',
+            'OPENAI_BASE_URL',
+            'CODEX_HOME',
         ],
     ];
 
     /**
-     * Variables Tessera reads from — these should pass through to subprocesses
-     * that might need them (e.g., composer reads COMPOSER_HOME, npm reads
-     * npm_config_*, etc.).
+     * Passthrough vars that are safe to hand to an AI CLI child: they are NOT
+     * credentials (nor handles that grant access to credentials), and an AI CLI
+     * — itself a Node/JS binary — plausibly reads them (config/cache dirs, Node
+     * runtime tuning, the user's Tessera flags). These flow into BOTH the
+     * AI-tool policy and the build-tool policy.
+     *
+     * The discriminator for membership here: (a) the value is not a secret and
+     * does not unlock one, AND (b) an AI CLI plausibly consults it. Anything that
+     * fails either test belongs in BUILD_ONLY_PASSTHROUGH below.
      */
-    private const TOOL_PASSTHROUGH = [
-        'COMPOSER_HOME',
-        'COMPOSER_AUTH',
-        'COMPOSER_CACHE_DIR',
-        'COMPOSER_NO_INTERACTION',
-        'COMPOSER_MEMORY_LIMIT',
-        'NPM_CONFIG_REGISTRY',
-        'NPM_CONFIG_CACHE',
+    private const AI_SAFE_PASSTHROUGH = [
         'NODE_OPTIONS',
-        'GIT_SSH',
-        'GIT_SSH_COMMAND',
-        'SSH_AUTH_SOCK',
-        'SSH_AGENT_PID',
-        'PHP_INI_SCAN_DIR',
-        'PHPRC',
         'XDG_CONFIG_HOME',
         'XDG_DATA_HOME',
         'XDG_CACHE_HOME',
@@ -109,6 +140,46 @@ final class EnvPolicy
         'TESSERA_CLAUDE_PLAN',
         'TESSERA_CODEX_PLAN',
         'TESSERA_GEMINI_PLAN',
+    ];
+
+    /**
+     * Passthrough vars that must reach build/shell tools (composer, npm, git,
+     * php) but must NEVER reach an AI CLI child. Two reasons a var lives here:
+     *
+     *   - It is a credential or a handle that grants credential access:
+     *       COMPOSER_AUTH    — frequently holds a GitHub OAuth token / private-
+     *                          repo HTTP basic-auth JSON.
+     *       SSH_AUTH_SOCK    — the ssh-agent socket → live signing access to the
+     *                          user's loaded SSH private keys.
+     *       SSH_AGENT_PID    — part of the same ssh-agent capability surface.
+     *       GIT_SSH /
+     *       GIT_SSH_COMMAND  — can embed an identity file (`-i path`) or an
+     *                          arbitrary wrapper command.
+     *   - It is build-tool-specific configuration an AI CLI has no use for
+     *     (COMPOSER_*, PHPRC, PHP_INI_SCAN_DIR) and that only widens the AI
+     *     child's view of the host for no benefit.
+     *
+     * Keeping these out of forAiTool() is the credential-leak fix for issue #4:
+     * an AI child no longer inherits Git/SSH/Composer credentials.
+     */
+    private const BUILD_ONLY_PASSTHROUGH = [
+        'COMPOSER_HOME',
+        'COMPOSER_AUTH',
+        'COMPOSER_CACHE_DIR',
+        'COMPOSER_NO_INTERACTION',
+        'COMPOSER_MEMORY_LIMIT',
+        'GIT_SSH',
+        'GIT_SSH_COMMAND',
+        'SSH_AUTH_SOCK',
+        'SSH_AGENT_PID',
+        'PHP_INI_SCAN_DIR',
+        'PHPRC',
+        // npm install-time configuration: the registry URL can embed an auth
+        // token and is only consulted by `npm install`, never by an AI CLI at
+        // prompt-execution time. (NPM_CONFIG_PREFIX stays in BASE_ALLOWLIST — it
+        // is a binary locator, and NODE_OPTIONS stays AI-safe — it is runtime.)
+        'NPM_CONFIG_REGISTRY',
+        'NPM_CONFIG_CACHE',
     ];
 
     /**
@@ -172,24 +243,35 @@ final class EnvPolicy
     }
 
     /**
-     * Build-tool policy — base + composer/npm/git passthrough. Use for
-     * `composer install`, `npm run build`, `php artisan`, `git commit`.
-     * Notably does NOT include AI credentials.
+     * Build-tool policy — base + AI-safe passthrough + build-only passthrough.
+     * Use for `composer install`, `npm run build`, `php artisan`, `git commit`.
+     * Carries the build/shell credentials (COMPOSER_AUTH, ssh-agent, GIT_SSH*)
+     * those tools legitimately need. Notably does NOT include AI provider keys.
      */
     public static function buildTool(): self
     {
-        return new self(array_merge(self::BASE_ALLOWLIST, self::TOOL_PASSTHROUGH));
+        return new self(array_merge(
+            self::BASE_ALLOWLIST,
+            self::AI_SAFE_PASSTHROUGH,
+            self::BUILD_ONLY_PASSTHROUGH,
+        ));
     }
 
     /**
-     * AI-tool policy — base + passthrough + credentials for the named AI only.
-     * Other providers' keys are filtered out.
+     * AI-tool policy — base + AI-safe passthrough + credentials for the named
+     * AI only. Other providers' keys are filtered out, and so are the build/
+     * shell credentials in BUILD_ONLY_PASSTHROUGH (COMPOSER_AUTH, ssh-agent,
+     * GIT_SSH*): an AI CLI child must see ONLY its own provider's credentials.
      */
     public static function forAiTool(string $toolName): self
     {
         $credentials = self::AI_CREDENTIALS[$toolName] ?? [];
 
-        return new self(array_merge(self::BASE_ALLOWLIST, self::TOOL_PASSTHROUGH, $credentials));
+        return new self(array_merge(
+            self::BASE_ALLOWLIST,
+            self::AI_SAFE_PASSTHROUGH,
+            $credentials,
+        ));
     }
 
     /**

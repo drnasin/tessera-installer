@@ -177,7 +177,7 @@ class AiTool
             2 => ['pipe', 'w'],
         ];
 
-        $env = self::cleanEnv();
+        $env = $this->executeEnvPolicy()->apply();
 
         $process = proc_open($command, $descriptors, $pipes, $workingDir, $env);
 
@@ -264,7 +264,7 @@ class AiTool
             2 => ['pipe', 'w'],
         ];
 
-        $process = proc_open($command, $descriptors, $pipes, null, self::cleanEnv());
+        $process = proc_open($command, $descriptors, $pipes, null, self::detectionEnvPolicy()->apply());
 
         if (! is_resource($process)) {
             return null;
@@ -321,28 +321,36 @@ class AiTool
     }
 
     /**
-     * Build clean environment without AI nesting markers.
+     * Environment policy for an actual prompt execution.
+     *
+     * Per-provider isolation: the child sees ONLY this tool's own provider
+     * credentials (claude → ANTHROPIC_*, codex → OPENAI_*, gemini → GOOGLE/GEMINI),
+     * plus base infrastructure (PATH, locale, proxy, CA, node locators). Cross-
+     * provider keys and unrelated secrets (GITHUB_TOKEN, CI tokens) never reach
+     * the child. AI-nesting markers are stripped by EnvPolicy::apply().
+     *
+     * An unknown tool name resolves to no provider credentials (fail-closed):
+     * the AI call will run credential-less rather than leak another provider's
+     * secrets. The only names in play are the three built-ins from tools().
+     *
+     * @internal Exposed for selection tests; not part of any public contract.
      */
-    private static function cleanEnv(): array
+    public function executeEnvPolicy(): EnvPolicy
     {
-        $env = getenv();
+        return EnvPolicy::forAiTool($this->name);
+    }
 
-        if (! is_array($env)) {
-            return [];
-        }
-
-        $remove = [
-            'CLAUDECODE',
-            'CLAUDE_CODE',
-            'CLAUDE_CODE_SSE_PORT',
-            'CLAUDE_CODE_ENTRYPOINT',
-            'VIPSHOME',
-        ];
-
-        foreach ($remove as $var) {
-            unset($env[$var]);
-        }
-
-        return $env;
+    /**
+     * Environment policy for a `--version` detection probe.
+     *
+     * Detection runs before any provider is chosen and must never receive
+     * credentials — minimal() passes only PATH/locale/infra and strips
+     * AI-nesting markers.
+     *
+     * @internal Exposed for selection tests; not part of any public contract.
+     */
+    public static function detectionEnvPolicy(): EnvPolicy
+    {
+        return EnvPolicy::minimal();
     }
 }

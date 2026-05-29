@@ -48,15 +48,4 @@ final class GeminiAdapter extends AbstractAdapter
     {
         return true;
     }
-
-    protected function buildChildEnv(): array
-    {
-        $env = parent::buildChildEnv();
-
-        foreach (['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENAI_ORG_ID'] as $other) {
-            unset($env[$other]);
-        }
-
-        return $env;
-    }
 }
