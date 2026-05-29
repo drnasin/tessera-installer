@@ -453,6 +453,20 @@ FORMAT;
     }
 
     /**
+     * Record an outcome for a step that manages its own retry loop outside
+     * run()/runCommand()/runAi() (e.g. LaravelStack's run-and-fix-tests loop).
+     *
+     * Keeps the step summary honest: a hybrid step can report FAILED/SKIPPED
+     * rather than silently appearing as OK or not appearing at all. Use the
+     * same vocabulary printSummary() understands ('OK', 'FIXED_BY_AI',
+     * 'FIXED_BY_USER', 'SKIPPED', 'FAILED').
+     */
+    public function recordOutcome(string $name, string $status): void
+    {
+        $this->log[$name] = $status;
+    }
+
+    /**
      * Get the log of all steps and their outcomes.
      *
      * @return array<string, string>

@@ -206,9 +206,28 @@ final class LaravelStack implements StackInterface
         // a hybrid — `php artisan test` is shell, but failure responses feed
         // back into a follow-up AI prompt, retried up to 3 times. That kind
         // of stateful loop doesn't fit the linear plan model in v1.
+        //
+        // Honest-state contract (issue #5): the `tests_fixed` step is marked
+        // complete EITHER way — passing or still-failing — to avoid an
+        // infinite-ish retry across resumes for a deterministically-failing
+        // generated test. "Complete" here means "the test-fix loop ran to
+        // its end", NOT "tests passed". The actual pass/fail outcome is
+        // recorded separately via Memory (failStep + excerpt) and surfaced
+        // in the step summary and final completion output, so nothing claims
+        // tests passed when they did not. A failing generated app is still
+        // usable, so the install is allowed to finish (return true below).
         if (! $this->memory->isStepDone('tests_fixed')) {
-            $this->runAndFixTests();
-            $this->memory->completeStep('tests_fixed');
+            // runAndFixTests records the honest outcome (failStep + excerpt on
+            // failure) AND marks the step complete itself, in that order, so a
+            // crash can never leave a failure recorded without completion (which
+            // would re-trigger the whole AI loop on resume).
+            $this->runAndFixTests($this->steps, $this->memory, $this->fullPath, $this->aiTimeout);
+        } elseif ($this->memory->hasFailedStep('tests_fixed')) {
+            // Resume after a recorded failure: keep the step summary honest by
+            // repopulating this run's StepRunner log, and warn instead of
+            // printing a green "done".
+            $this->steps->recordOutcome('AI: Fix failing tests', 'FAILED');
+            Console::warn('AI: Fix failing tests (already attempted — tests still failing, manual review needed)');
         } else {
             Console::success('AI: Fix failing tests (already done)');
         }
@@ -1276,11 +1295,39 @@ HELPER);
     }
 
     /**
-     * Run tests, and if they fail, let AI fix them (up to 2 attempts).
+     * Run tests, and if they fail, let AI fix them (up to 2 fix attempts
+     * across 3 test runs).
+     *
+     * Returns true only when `php artisan test` exits 0. When tests are still
+     * failing after the last attempt the method returns false and records the
+     * honest outcome (issue #5):
+     *   - StepRunner log gets a FAILED entry so printSummary() shows it red.
+     *   - Memory::failStep() persists a truncated test-output excerpt to
+     *     .tessera/state.json for post-mortem and resume context.
+     *
+     * The step is marked complete by THIS method in every exit path, and the
+     * completion write always happens AFTER the failure write. That ordering
+     * matters: if the process crashed between a failStep() and a completeStep()
+     * done by the caller, resume would see the step as not-done and re-run the
+     * whole AI fix loop (burning tokens). Persisting completion last — and
+     * deduplicating failStep — keeps "resume must not loop forever" intact.
+     *
+     * "Complete" means "the test-fix loop ran to its end", NOT "tests passed".
+     * The install is allowed to finish either way (a failing generated app is
+     * still usable); scaffold() returns true regardless. Nothing claims tests
+     * passed when they did not — that is the issue #5 invariant.
+     *
+     * Dependencies are passed explicitly so the decision logic is unit-testable
+     * against a temp dir without running the full scaffold() flow. The
+     * `php artisan test` subprocess routes through Console::execSilentArgv,
+     * which honours Console::setCommandExecutor() — tests inject a fake there.
+     * The method is public (rather than private) only to expose that seam; it
+     * has no hidden dependency on scaffold() having run.
      */
-    private function runAndFixTests(): void
+    public function runAndFixTests(StepRunner $steps, Memory $memory, string $fullPath, int $aiTimeout): bool
     {
         $maxAttempts = 3;
+        $stepName = 'AI: Fix failing tests';
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             Console::line();
@@ -1288,13 +1335,15 @@ HELPER);
 
             $result = Console::execSilentArgv(
                 ['php', 'artisan', 'test', '--no-interaction'],
-                $this->fullPath,
+                $fullPath,
             );
 
             if ($result['exit'] === 0) {
                 Console::success('All tests passing');
+                $steps->recordOutcome($stepName, $attempt === 1 ? 'OK' : 'FIXED_BY_AI');
+                $memory->completeStep('tests_fixed');
 
-                return;
+                return true;
             }
 
             // Tests failed
@@ -1307,23 +1356,37 @@ HELPER);
 
             Console::warn("  {$failCount} test(s) failed");
 
-            if ($attempt >= $maxAttempts) {
-                Console::warn('  Skipping test fixes — project is functional, tests need manual review.');
+            // Truncate output to last 2000 chars (excerpt for prompt + post-mortem).
+            // Guard against an empty capture so the persisted excerpt is never a
+            // bare label with no diagnostic value.
+            $excerpt = trim($output) !== ''
+                ? (strlen($output) > 2000 ? '...'.substr($output, -2000) : $output)
+                : '(no test output captured; exit code '.$result['exit'].')';
 
-                return;
+            if ($attempt >= $maxAttempts) {
+                Console::warn('  Tests still failing after all attempts — project is functional, tests need manual review.');
+                $steps->recordOutcome($stepName, 'FAILED');
+
+                // Record the failure first, then mark complete LAST so resume
+                // never sees a failure without completion. Dedup so repeated
+                // resumes (or a crash-then-resume) don't pile up entries.
+                if (! $memory->hasFailedStep('tests_fixed')) {
+                    $memory->failStep('tests_fixed', "Tests still failing after {$maxAttempts} attempts. Last output excerpt:\n{$excerpt}");
+                }
+
+                $memory->completeStep('tests_fixed');
+
+                return false;
             }
 
-            // Let AI fix the failures
-            // Truncate output to last 2000 chars to avoid prompt size issues
-            $truncatedOutput = strlen($output) > 2000 ? '...'.substr($output, -2000) : $output;
-
-            $this->steps->runAi(
-                name: 'AI: Fix failing tests',
+            // Let AI fix the failures.
+            $steps->runAi(
+                name: $stepName,
                 complexity: Complexity::MEDIUM,
                 prompt: <<<PROMPT
 The project tests are failing. Here is the test output:
 
-{$truncatedOutput}
+{$excerpt}
 
 Fix the failing tests. Rules:
 1. If the test is wrong (testing something that doesn't exist), FIX THE TEST
@@ -1336,8 +1399,20 @@ Fix the failing tests. Rules:
 PROMPT,
                 verify: null,
                 skippable: true,
-                timeout: $this->aiTimeout,
+                timeout: $aiTimeout,
             );
         }
+
+        // Unreachable in practice (the loop returns on pass or on the final
+        // failed attempt), but keeps the return type honest for the compiler.
+        $steps->recordOutcome($stepName, 'FAILED');
+
+        if (! $memory->hasFailedStep('tests_fixed')) {
+            $memory->failStep('tests_fixed', 'Tests still failing.');
+        }
+
+        $memory->completeStep('tests_fixed');
+
+        return false;
     }
 }
