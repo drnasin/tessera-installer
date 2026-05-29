@@ -131,7 +131,7 @@ For continuing changes:
 vendor/bin/phpunit
 ```
 
-406 tests, 801 assertions — all passing with zero AI tokens. CI runs on Ubuntu, Windows, and macOS with PHP 8.4–8.5.
+477 tests, 1090 assertions — all passing with zero AI tokens. CI runs on Ubuntu, Windows, and macOS with PHP 8.4–8.5.
 
 ## Contributing & adding a stack
 
