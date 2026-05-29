@@ -117,6 +117,25 @@ final class Memory
     }
 
     /**
+     * Check if a step has a recorded failure (for honest resume / completion
+     * reporting). A step can be both completed AND failed: "completed" means
+     * the loop ran to its end, "failed" records that the outcome was bad.
+     * See issue #5 — `tests_fixed` is marked complete even when generated
+     * project tests still fail, but the failure is tracked here so nothing
+     * claims tests passed when they did not.
+     */
+    public function hasFailedStep(string $step): bool
+    {
+        foreach ($this->state['failed_steps'] ?? [] as $failed) {
+            if (($failed['name'] ?? '') === $step) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Record a completed step.
      */
     public function completeStep(string $step): void

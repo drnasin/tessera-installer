@@ -779,6 +779,16 @@ PROMPT;
         Console::cyan('╚══════════════════════════════════════╝');
         Console::line();
 
+        // Honest quality-gate reporting (issue #5): the install finishes even
+        // when generated-project tests still fail, but the completion output
+        // must never imply the tests passed. Surface the failure here so the
+        // "ready" banner doesn't mislead.
+        if ($this->memory?->hasFailedStep('tests_fixed')) {
+            Console::warn('  ⚠ Generated project tests are still failing — they need manual review.');
+            Console::line('    See .tessera/state.json (failed_steps) for the test-output excerpt.');
+            Console::line();
+        }
+
         foreach ($info['commands'] as $cmd) {
             Console::line("  {$cmd}");
         }
