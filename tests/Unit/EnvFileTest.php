@@ -104,6 +104,26 @@ final class EnvFileTest extends TestCase
     }
 
     #[Test]
+    public function setKey_replace_path_preserves_dollar_digit(): void
+    {
+        // Regression: `$1` in the value was consumed as a preg_replace
+        // backreference on the replace path (pattern has no capture groups,
+        // so the value silently lost its `$1` and gained a stray backslash).
+        $result = EnvFile::setKey("DB_PASSWORD=old\n", 'DB_PASSWORD', 'p$1word');
+
+        $this->assertStringContainsString('DB_PASSWORD="p\\$1word"', $result);
+        $this->assertStringNotContainsString('DB_PASSWORD="p\\word"', $result);
+    }
+
+    #[Test]
+    public function setKey_append_path_preserves_dollar_digit(): void
+    {
+        $result = EnvFile::setKey("APP_ENV=local\n", 'DB_PASSWORD', 'p$1word');
+
+        $this->assertStringContainsString('DB_PASSWORD="p\\$1word"', $result);
+    }
+
+    #[Test]
     public function setKey_does_not_leak_special_chars_across_keys(): void
     {
         // Regression: password containing newline must not inject extra lines.
