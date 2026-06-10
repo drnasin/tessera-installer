@@ -58,10 +58,14 @@ final class EnvFile
         $line = $key.'='.self::quote($value);
 
         // Replace existing assignment, preserving trailing newline if any.
+        // Escape both backslash AND dollar in the replacement string: preg_replace
+        // treats `$N`/`\N` as backreferences, so a value containing `$1` would
+        // otherwise be swallowed (the pattern has no capture groups → empty string).
         $pattern = '/^'.preg_quote($key, '/').'=.*/m';
 
         if (preg_match($pattern, $env) === 1) {
-            $replaced = preg_replace($pattern, str_replace('\\', '\\\\', $line), $env, 1);
+            $replacement = str_replace(['\\', '$'], ['\\\\', '\\$'], $line);
+            $replaced = preg_replace($pattern, $replacement, $env, 1);
 
             return is_string($replaced) ? $replaced : $env;
         }
