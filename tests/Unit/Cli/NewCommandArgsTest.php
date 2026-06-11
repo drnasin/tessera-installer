@@ -108,4 +108,16 @@ final class NewCommandArgsTest extends TestCase
         $this->assertSame('my-shop', $args->directory);
         $this->assertNull($args->forcedStack);
     }
+
+    #[Test]
+    public function help_flag_alone_yields_null_directory(): void
+    {
+        // bin/tessera intercepts --help/-h before reaching the parser, but the
+        // parser must not treat the help flag as a directory if it ever does.
+        foreach (['--help', '-h'] as $flag) {
+            $args = NewCommandArgs::parse([$flag]);
+
+            $this->assertNull($args->directory, "Flag {$flag} must not become the directory");
+        }
+    }
 }

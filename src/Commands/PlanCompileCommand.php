@@ -25,8 +25,34 @@ final class PlanCompileCommand implements CommandInterface
         return 'Compile a stack YAML manifest to a versioned plan.json.';
     }
 
+    public function help(): void
+    {
+        Console::line();
+        Console::bold('tessera plan compile — compile a stack manifest to plan.json');
+        Console::line();
+        Console::line('Usage:');
+        Console::line('  tessera plan compile <manifest.yaml> [-o <output.json>]');
+        Console::line();
+        Console::line('Arguments:');
+        Console::line('  <manifest.yaml>      Path to the stack manifest YAML to compile.');
+        Console::line();
+        Console::line('Options:');
+        Console::line('  -o, --output=<path>  Write plan.json here (default: ./.tessera/plan.json).');
+        Console::line('  -h, --help           Show this help.');
+        Console::line();
+        Console::line('Example:');
+        Console::line('  tessera plan compile stacks/laravel.yaml -o build/plan.json');
+        Console::line();
+    }
+
     public function run(array $args): int
     {
+        if (in_array('--help', $args, true) || in_array('-h', $args, true)) {
+            $this->help();
+
+            return 0;
+        }
+
         $manifestPath = $args[0] ?? null;
 
         if ($manifestPath === null) {

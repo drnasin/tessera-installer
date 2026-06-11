@@ -28,8 +28,38 @@ final class PlanDiffCommand implements CommandInterface
         return 'Show the semantic diff between two compiled plans.';
     }
 
+    public function help(): void
+    {
+        Console::line();
+        Console::bold('tessera plan diff — semantic diff between two compiled plans');
+        Console::line();
+        Console::line('Usage:');
+        Console::line('  tessera plan diff <before.json> <after.json>');
+        Console::line();
+        Console::line('Arguments:');
+        Console::line('  <before.json>  Baseline plan.');
+        Console::line('  <after.json>   Plan to compare against the baseline.');
+        Console::line();
+        Console::line('Options:');
+        Console::line('  -h, --help     Show this help.');
+        Console::line();
+        Console::line('Exit codes:');
+        Console::line('  0  Plans are semantically identical.');
+        Console::line('  2  Semantic differences exist.');
+        Console::line();
+        Console::line('Example:');
+        Console::line('  tessera plan diff old/plan.json new/plan.json');
+        Console::line();
+    }
+
     public function run(array $args): int
     {
+        if (in_array('--help', $args, true) || in_array('-h', $args, true)) {
+            $this->help();
+
+            return 0;
+        }
+
         if (count($args) < 2) {
             Console::error('Need exactly two plan paths.');
             Console::line('Usage: tessera plan diff <before.json> <after.json>');
