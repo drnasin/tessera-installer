@@ -83,7 +83,18 @@ jobs:
 
       - name: tessera doctor
         shell: bash
-        run: php bin/tessera doctor
+        # CI runners have no AI CLI installed, so doctor correctly exits 1
+        # ("no usable AI tool" — issue #23). Accept 0 (env ready) or 1 (its own
+        # diagnostic failure) as a passing smoke test, but still fail on any
+        # other exit code — a PHP parse/fatal error exits 255, which must not
+        # be masked.
+        run: |
+          php bin/tessera doctor
+          status=$?
+          if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+            echo "doctor crashed with unexpected exit code $status"
+            exit "$status"
+          fi
 
       - name: tessera tools
         shell: bash
