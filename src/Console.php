@@ -17,6 +17,11 @@ final class Console
     private static ?CommandExecutor $commandExecutor = null;
 
     /**
+     * Override for progress-stream TTY detection (for testing). Null = auto-detect.
+     */
+    private static ?bool $progressAnimateOverride = null;
+
+    /**
      * Swap the input provider (for testing).
      */
     public static function setInput(?ConsoleInput $input): void
@@ -27,6 +32,56 @@ final class Console
     public static function setCommandExecutor(?CommandExecutor $commandExecutor): void
     {
         self::$commandExecutor = $commandExecutor;
+    }
+
+    /**
+     * Force progress indicators into TTY (true) or non-TTY (false) mode,
+     * or null to restore auto-detection. For testing only.
+     */
+    public static function setProgressAnimate(?bool $animate): void
+    {
+        self::$progressAnimateOverride = $animate;
+    }
+
+    /**
+     * Create an in-place progress indicator for a long-running operation.
+     *
+     * On a TTY the returned handle redraws a single "⏳ {label}… (Ns)" line via
+     * tick() and clears it on finish(). On a non-TTY stream it prints one static
+     * line and ignores ticks — keeping CI/fixture output free of control chars.
+     *
+     * @param  resource|null  $stream  Output stream; defaults to STDOUT.
+     */
+    public static function progress(string $label, $stream = null): ConsoleProgress
+    {
+        $stream ??= defined('STDOUT') ? STDOUT : fopen('php://stdout', 'wb');
+
+        return new ConsoleProgress($label, $stream, self::shouldAnimate($stream));
+    }
+
+    /**
+     * Decide whether progress output should animate (interactive TTY) or print
+     * a single static line (non-TTY: CI, pipes, --requirements-fixture).
+     *
+     * @param  resource  $stream
+     */
+    private static function shouldAnimate($stream): bool
+    {
+        if (self::$progressAnimateOverride !== null) {
+            return self::$progressAnimateOverride;
+        }
+
+        // NO_COLOR / dumb terminals: treat as non-interactive to avoid control chars.
+        $noColor = getenv('NO_COLOR');
+        if ($noColor !== false && $noColor !== '') {
+            return false;
+        }
+
+        if (! is_resource($stream)) {
+            return false;
+        }
+
+        return function_exists('stream_isatty') && @stream_isatty($stream);
     }
 
     public static function line(string $text = ''): void

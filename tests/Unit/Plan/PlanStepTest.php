@@ -36,7 +36,7 @@ final class PlanStepTest extends TestCase
             complexity: Complexity::MEDIUM,
             prompt: 'Build a default theme',
             adapterHint: 'claude',
-            modelHint: 'claude-sonnet-4-20250514',
+            modelHint: 'claude-sonnet-4-6',
             dependencies: ['models'],
             gates: [['type' => 'exists_all', 'paths' => ['app/Models/User.php']]],
         );

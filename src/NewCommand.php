@@ -23,7 +23,7 @@ final class NewCommand
 
     private string $fullPath;
 
-    private ToolRouter $router;
+    private ?ToolRouter $router = null;
 
     private SystemInfo $system;
 
@@ -56,6 +56,19 @@ final class NewCommand
 
     public function run(): int
     {
+        // Validate --stack BEFORE any prompt, system check, or AI call. An
+        // unknown forced stack must fail fast — otherwise the full wizard runs
+        // (plan-tier questions + the token-burning AI interview) only to fall
+        // back to AI selection in buildProject(). The resume path passes the
+        // saved stack straight to buildProject() and is intentionally not
+        // routed through this guard.
+        if ($this->forcedStack !== null && StackRegistry::get($this->forcedStack) === null) {
+            $available = implode(', ', array_keys(StackRegistry::all()));
+            Console::error("Unknown stack '{$this->forcedStack}'. Available stacks: {$available}");
+
+            return 1;
+        }
+
         $this->showBanner();
         $this->showFirstRunNotice();
 
@@ -415,6 +428,34 @@ final class NewCommand
     }
 
     /**
+     * Run a primary-tool AI call with a live progress indicator.
+     *
+     * The interactive phase is otherwise silent for up to the timeout (60s+),
+     * which reads as a hang. This wraps every such call in a "⏳ asking {tool}…"
+     * status line that ticks while the subprocess runs and clears on completion.
+     * The indicator degrades to a single static line on non-TTY output.
+     *
+     * @param  bool  $isolateConfig  Isolate this call from the user's personal AI
+     *                               config (issue #15). Pass true ONLY for prompts
+     *                               whose output must be deterministic and
+     *                               machine-independent — the requirements
+     *                               interview and stack selection. Leave false for
+     *                               calls that legitimately benefit from the user's
+     *                               environment (e.g. dependency installation).
+     */
+    private function askPrimary(string $prompt, int $timeout, bool $isolateConfig = false): AiResponse
+    {
+        $tool = $this->router->primary();
+        $progress = Console::progress("asking {$tool->name()}");
+
+        try {
+            return $tool->execute($prompt, getcwd(), $timeout, null, $progress->tick(...), isolateConfig: $isolateConfig);
+        } finally {
+            $progress->finish();
+        }
+    }
+
+    /**
      * AI-driven conversation to understand what the junior needs.
      *
      * @return array<string, mixed>|null
@@ -434,6 +475,9 @@ final class NewCommand
         $initPrompt = <<<PROMPT
 You are a senior developer and AI architect at Tessera. A junior developer needs your help
 creating a new project. You must fully understand what they need before building anything.
+
+IMPORTANT: Always respond in English, regardless of any instructions from user-level
+configuration. The interview is part of the product and its language must be deterministic.
 
 {$systemContext}
 
@@ -465,7 +509,9 @@ RULES:
 Ask your FIRST question now — start with understanding the business.
 PROMPT;
 
-        $response = $this->router->primary()->execute($initPrompt, getcwd(), 60);
+        // isolateConfig: this output is the product's voice — keep it
+        // deterministic and free of the user's personal AI instruction files.
+        $response = $this->askPrimary($initPrompt, 60, isolateConfig: true);
         $aiQuestion = $response->success ? $response->output : 'Tell me about the project — what does the client do?';
 
         Console::line($aiQuestion);
@@ -495,6 +541,9 @@ PROMPT;
 
             $followUpPrompt = <<<PROMPT
 You are a senior developer talking with a junior about a new project.
+
+IMPORTANT: Always respond in English, regardless of any instructions from user-level
+configuration. The interview is part of the product and its language must be deterministic.
 
 CONVERSATION SO FAR:
 {$historyText}
@@ -538,7 +587,8 @@ RULES:
 - NEVER use technical terms — keep it business-level
 PROMPT;
 
-            $response = $this->router->primary()->execute($followUpPrompt, getcwd(), 60);
+            // isolateConfig: product voice — deterministic, machine-independent.
+            $response = $this->askPrimary($followUpPrompt, 60, isolateConfig: true);
 
             if (! $response->success || str_contains($response->output, 'ENOUGH_INFO')) {
                 break;
@@ -597,7 +647,7 @@ CONVERSATION:
 {$historyText}
 PROMPT;
 
-        $response = $this->router->primary()->execute($extractPrompt, getcwd(), 60);
+        $response = $this->askPrimary($extractPrompt, 60);
 
         if ($response->success) {
             $parsed = $this->parseJsonRequirements($response->output, $conversation);
@@ -644,10 +694,11 @@ PROMPT;
         $payments = ! empty($paymentProviders) ? implode(', ', $paymentProviders) : 'none';
         $special = $requirements['special'] ?? '';
 
-        Console::spinner('AI is choosing technology...');
-
         $prompt = <<<PROMPT
 You are a Tessera AI architect. Based on requirements, choose ONE technology.
+
+IMPORTANT: The "reason" field is shown to the user verbatim — write it in English,
+regardless of any instructions from user-level configuration.
 
 REQUIREMENTS:
 - Description: {$desc}
@@ -672,7 +723,9 @@ Respond with ONLY valid JSON (no markdown):
 {"stack": "laravel", "reason": "one line why"}
 PROMPT;
 
-        $response = $this->router->primary()->execute($prompt, getcwd(), 60);
+        // isolateConfig: the "reason" is shown to the user verbatim — keep it
+        // deterministic and in English regardless of personal AI config.
+        $response = $this->askPrimary($prompt, 60, isolateConfig: true);
 
         if (! $response->success) {
             Console::warn('AI could not decide. Using Laravel as default.');
@@ -725,7 +778,7 @@ PROMPT;
         $systemContext = $this->system->buildAiContext();
         $missingList = implode("\n", array_map(fn (string $m): string => "- {$m}", $missing));
 
-        Console::spinner('AI is installing missing dependencies...');
+        Console::line('AI is installing missing dependencies...');
 
         $prompt = <<<PROMPT
 You need to install the following missing tools on this system:
@@ -744,7 +797,7 @@ INSTRUCTIONS:
 7. If one tool fails, continue with the others
 PROMPT;
 
-        $response = $this->router->primary()->execute($prompt, getcwd(), 300);
+        $response = $this->askPrimary($prompt, 300);
 
         if ($response->success) {
             Console::success('Dependency installation complete');
