@@ -96,7 +96,9 @@ tessera --help
 
 ## Environment variables
 
-Optional. The installer asks interactively if not set.
+Optional. The installer asks for your AI plans interactively on first run and
+saves the answers to `~/.tessera/config.json`, so later runs skip the questions.
+The environment variables below always take precedence over the saved config.
 
 ```bash
 TESSERA_CLAUDE_PLAN=max       # max | pro | free

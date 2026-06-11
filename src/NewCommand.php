@@ -908,9 +908,14 @@ PROMPT;
     }
 
     /**
-     * Determine tool preferences — from env vars or by asking the user.
+     * Determine tool preferences. Precedence: env vars > saved config >
+     * interactive prompt. Answers from the prompt are persisted to
+     * ~/.tessera/config.json so later runs skip the questions entirely.
+     *
+     * @param  array<string, AiTool>|null  $detectedTools  Injectable for tests;
+     *                                                      null = detect from the system.
      */
-    private function resolveToolPreference(): ToolPreference
+    private function resolveToolPreference(?array $detectedTools = null): ToolPreference
     {
         $envPref = ToolPreference::fromEnv();
 
@@ -920,30 +925,49 @@ PROMPT;
         }
 
         // Detect available tools first
-        $detected = AiTool::detectAllInstances();
+        $detected = $detectedTools ?? AiTool::detectAllInstances();
 
         if (empty($detected)) {
             return $envPref;
         }
 
+        $userConfig = UserConfig::forCurrentUser();
+        $savedPlans = $userConfig?->loadPlans() ?? [];
+
         // Plan options per tool
         $planOptions = [
-            'claude' => ['max' => 'Max (unlimited)', 'pro' => 'Pro', 'free' => 'Free'],
+            'claude' => ['max' => 'Max', 'pro' => 'Pro', 'free' => 'Free'],
             'codex' => ['plus' => 'Plus (ChatGPT Plus)', 'free' => 'Free'],
             'gemini' => ['pro' => 'Pro (Google One AI Premium)', 'free' => 'Free'],
         ];
 
-        $plans = [];
-
-        Console::line();
-        Console::bold('What AI plans do you have? (affects which tool handles each task)');
-
+        // Only prompt for detected tools we have no saved answer for. A user who
+        // installs a new tool (e.g. gemini) after saving claude/codex gets asked
+        // only about the new one — existing answers are preserved.
+        $toolsToPrompt = [];
         foreach ($detected as $name => $tool) {
             if (! isset($planOptions[$name])) {
                 continue;
             }
 
-            $options = $planOptions[$name];
+            if (! isset($savedPlans[$name])) {
+                $toolsToPrompt[$name] = $planOptions[$name];
+            }
+        }
+
+        // Everything detected already has a saved answer — skip the prompt.
+        if (empty($toolsToPrompt) && ! empty($savedPlans)) {
+            Console::line('Using saved AI plans ('.$this->describePlans($savedPlans).') — set TESSERA_CLAUDE_PLAN etc. to override.');
+
+            return new ToolPreference(plans: $savedPlans);
+        }
+
+        $plans = $savedPlans;
+
+        Console::line();
+        Console::bold('What AI plans do you have? (affects which tool handles each task)');
+
+        foreach ($toolsToPrompt as $name => $options) {
             $optionValues = array_keys($options);
             $optionLabels = array_values($options);
 
@@ -961,7 +985,25 @@ PROMPT;
 
         Console::line();
 
+        // Persist (merged) answers so later runs skip the prompt.
+        $userConfig?->savePlans($plans);
+
         return new ToolPreference(plans: $plans);
+    }
+
+    /**
+     * Human-readable "claude=max, codex=plus" summary for the saved-plans notice.
+     *
+     * @param  array<string, string>  $plans
+     */
+    private function describePlans(array $plans): string
+    {
+        $parts = [];
+        foreach ($plans as $tool => $plan) {
+            $parts[] = "{$tool}={$plan}";
+        }
+
+        return implode(', ', $parts);
     }
 
     private function formatConversation(array $conversation): string
