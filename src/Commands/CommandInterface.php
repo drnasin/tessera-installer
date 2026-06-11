@@ -21,6 +21,14 @@ interface CommandInterface
     public function description(): string;
 
     /**
+     * Print the per-command usage block (flags, arguments, one example).
+     *
+     * Invoked when the command is run with `--help` or `-h`. Commands detect
+     * the flag at the top of run() and delegate here before doing any work.
+     */
+    public function help(): void;
+
+    /**
      * Execute with the remaining argv (after the command name).
      *
      * @param  list<string>  $args

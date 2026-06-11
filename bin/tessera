@@ -54,6 +54,7 @@ use Tessera\Installer\AiTool;
 use Tessera\Installer\Cli\ProjectDirectoryName;
 use Tessera\Installer\Console;
 use Tessera\Installer\NewCommand;
+use Tessera\Installer\Stacks\StackRegistry;
 use Tessera\Installer\SystemInfo;
 use Tessera\Installer\ToolRouter;
 
@@ -128,6 +129,12 @@ if ($command === 'plan') {
 
 if ($command === 'new') {
     $newArgs = array_slice($args, 1);
+
+    if (in_array('--help', $newArgs, true) || in_array('-h', $newArgs, true)) {
+        showNewHelp();
+        exit(0);
+    }
+
     $parsed = \Tessera\Installer\Cli\NewCommandArgs::parse($newArgs);
 
     if ($parsed->directory === null) {
@@ -188,6 +195,32 @@ function showHelp(): void
     Console::line();
     Console::line('  AI will ask what you need and build the project.');
     Console::line('  Requires PHP 8.4+ and at least one AI CLI (claude, gemini, codex).');
+    Console::line();
+}
+
+function showNewHelp(): void
+{
+    $stackNames = implode(', ', array_keys(StackRegistry::all()));
+
+    Console::line();
+    Console::bold('tessera new — create a new Tessera project');
+    Console::line();
+    Console::line('Usage:');
+    Console::line('  tessera new <project-name> [options]');
+    Console::line();
+    Console::line('Arguments:');
+    Console::line('  <project-name>                 Directory to create. Letters, numbers, -, _, . only;');
+    Console::line('                                 cannot start with a dash or dot.');
+    Console::line();
+    Console::line('Options:');
+    Console::line('  -f, --force                    Overwrite the target directory if it already exists.');
+    Console::line("  --stack=<name>                 Skip AI stack selection. Valid: {$stackNames}.");
+    Console::line('  --requirements-fixture=<path>  Skip the interactive Q&A by loading requirements from a');
+    Console::line('                                 JSON object ({"description": "...", "needs_shop": false, ...}).');
+    Console::line('  -h, --help                     Show this help.');
+    Console::line();
+    Console::line('Example:');
+    Console::line('  tessera new my-restaurant --stack=laravel');
     Console::line();
 }
 
