@@ -69,9 +69,9 @@ final class UsageTracker
 
     private function shortenModel(string $model): string
     {
-        // "claude-opus-4-20250514" → "opus"
-        // "claude-sonnet-4-20250514" → "sonnet"
-        // "claude-haiku-4-5-20251001" → "haiku"
+        // "claude-opus-4-8" → "opus"
+        // "claude-sonnet-4-6" → "sonnet"
+        // "claude-haiku-4-5" → "haiku"
         // "gemini-2.0-flash" → "flash"
         // "gemini-2.5-pro" → "pro"
         // "default" → "default"

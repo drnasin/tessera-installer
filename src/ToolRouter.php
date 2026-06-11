@@ -25,9 +25,9 @@ final class ToolRouter
 {
     private const MODEL_MAP = [
         'claude' => [
-            'simple' => 'claude-haiku-4-5-20251001',
-            'medium' => 'claude-sonnet-4-20250514',
-            'complex' => 'claude-opus-4-20250514',
+            'simple' => 'claude-haiku-4-5',
+            'medium' => 'claude-sonnet-4-6',
+            'complex' => 'claude-opus-4-8',
         ],
         'gemini' => [
             'simple' => 'gemini-2.0-flash',
@@ -51,22 +51,22 @@ final class ToolRouter
     private const FALLBACK_CHAINS = [
         'simple' => [
             ['gemini', 'gemini-2.0-flash'],
-            ['claude', 'claude-haiku-4-5-20251001'],
+            ['claude', 'claude-haiku-4-5'],
             ['codex', null],
-            ['claude', 'claude-sonnet-4-20250514'],
+            ['claude', 'claude-sonnet-4-6'],
             ['gemini', 'gemini-2.5-pro'],
         ],
         'medium' => [
-            ['claude', 'claude-sonnet-4-20250514'],
+            ['claude', 'claude-sonnet-4-6'],
             ['gemini', 'gemini-2.5-pro'],
-            ['claude', 'claude-haiku-4-5-20251001'],
+            ['claude', 'claude-haiku-4-5'],
             ['gemini', 'gemini-2.0-flash'],
             ['codex', null],
         ],
         'complex' => [
-            ['claude', 'claude-opus-4-20250514'],
+            ['claude', 'claude-opus-4-8'],
             ['gemini', 'gemini-2.5-pro'],
-            ['claude', 'claude-sonnet-4-20250514'],
+            ['claude', 'claude-sonnet-4-6'],
             ['gemini', 'gemini-2.0-flash'],
             ['codex', null],
         ],

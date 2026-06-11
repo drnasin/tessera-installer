@@ -68,11 +68,11 @@ final class ClaudeAdapterTest extends TestCase
     #[Test]
     public function model_flag_inserted_after_binary_name(): void
     {
-        $command = $this->buildCommand(model: 'claude-opus-4-20250514');
+        $command = $this->buildCommand(model: 'claude-opus-4-8');
 
         $this->assertSame('claude', $command[0]);
         $this->assertSame('--model', $command[1]);
-        $this->assertSame('claude-opus-4-20250514', $command[2]);
+        $this->assertSame('claude-opus-4-8', $command[2]);
     }
 
     #[Test]
@@ -88,7 +88,7 @@ final class ClaudeAdapterTest extends TestCase
     {
         $adapter = new ClaudeAdapter;
 
-        $this->assertTrue($adapter->supportsModel('claude-haiku-4-5-20251001'));
+        $this->assertTrue($adapter->supportsModel('claude-haiku-4-5'));
         $this->assertTrue($adapter->supportsModel(null));
         $this->assertTrue($adapter->supportsModel('arbitrary'));
     }
