@@ -50,7 +50,9 @@ if (! $loaded) {
     exit(1);
 }
 
+use Tessera\Installer\AiAuthProbe;
 use Tessera\Installer\AiTool;
+use Tessera\Installer\AuthProbeStatus;
 use Tessera\Installer\Cli\ProjectDirectoryName;
 use Tessera\Installer\Console;
 use Tessera\Installer\NewCommand;
@@ -87,8 +89,7 @@ if ($command === 'tools') {
 // ─── Doctor ───
 
 if ($command === 'doctor') {
-    showDoctor();
-    exit(0);
+    exit(showDoctor());
 }
 
 // ─── Stacks ───
@@ -328,7 +329,11 @@ function installerVersion(): string
     return 'dev';
 }
 
-function showDoctor(): void
+/**
+ * Run the system check. Returns the process exit code: 0 when the environment
+ * is ready, 1 when a required tool is missing or no AI tool is usable.
+ */
+function showDoctor(): int
 {
     $system = SystemInfo::detect();
 
@@ -366,15 +371,47 @@ function showDoctor(): void
 
     $aiTools = AiTool::detectAll();
     if (empty($aiTools)) {
+        // No AI CLI installed at all. This stays informational (exit 0),
+        // matching the long-standing behaviour the CI CLI-smoke test relies on
+        // (runners have zero AI tools). The NEW exit-1 signal below is reserved
+        // for the case where a CLI *is* installed but is logged out — that is
+        // the regression issue #23 fixes, and it cannot occur on a bare runner.
         Console::fail('No AI tools found!');
         Console::line('  Install one:');
         Console::line('    npm install -g @anthropic-ai/claude-code');
         Console::line('    npm install -g @google/gemini-cli');
         Console::line('    npm install -g @openai/codex');
-        $allGood = false;
     } else {
+        // Detection only proves the binary exists and reports a version. A
+        // logged-out CLI passes that check but fails the first real AI call,
+        // so probe each tool's auth state too (issue #23). A tool is "usable"
+        // when it is authenticated or its auth state could not be determined;
+        // only a conclusive logged-out result is unusable.
+        $probe = new AiAuthProbe;
+        $probeResults = [];
+
         foreach ($aiTools as $name => $info) {
-            Console::success("{$name} — {$info['version']}");
+            $result = $probe->probe($name, $info['version']);
+            $probeResults[] = $result;
+
+            if ($result->status === AuthProbeStatus::LoggedOut) {
+                Console::warn("{$name} — installed but not logged in (run: {$result->loginCommand})");
+            } elseif ($result->status === AuthProbeStatus::Unverified) {
+                Console::success("{$name} — {$info['version']} (login not verified)");
+            } else {
+                Console::success("{$name} — {$info['version']}");
+            }
+        }
+
+        // Tools are installed but every one is conclusively logged out: doctor
+        // would otherwise stay green and the first build would fail. This is
+        // the only AI-tool condition that fails doctor (exit 1) — a missing
+        // CLI is informational (the empty-$aiTools branch above stays exit 0),
+        // a present-but-logged-out CLI is a real misconfiguration to fix first.
+        if (AiAuthProbe::allInstalledToolsLoggedOut($probeResults)) {
+            Console::line();
+            Console::fail('No usable AI tool — every detected CLI is logged out.');
+            $allGood = false;
         }
     }
 
@@ -412,4 +449,6 @@ function showDoctor(): void
     }
 
     Console::line();
+
+    return $allGood ? 0 : 1;
 }
