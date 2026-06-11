@@ -4,7 +4,7 @@
 declare(strict_types=1);
 
 /**
- * Tessera CLI — AI-Native CMS Installer
+ * Tessera CLI — AI Project Installer
  *
  * Usage:
  *   tessera new {directory}    Create a new Tessera project
@@ -185,7 +185,7 @@ function showHelp(): void
     $stackNames = implode('|', array_keys(StackRegistry::all()));
 
     Console::line();
-    Console::cyan('  TESSERA — AI-Native CMS Installer');
+    Console::cyan('  TESSERA — AI Project Installer');
     Console::line();
     Console::line('  Usage:');
     Console::line('    tessera new {project-name}                       Create a new Tessera project');

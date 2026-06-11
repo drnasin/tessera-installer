@@ -1,6 +1,6 @@
 {
     "name": "tessera/installer",
-    "description": "Tessera AI-Native CMS Installer — AI builds your project",
+    "description": "Tessera AI Project Installer — AI builds your project",
     "keywords": ["tessera", "cms", "ai", "installer", "laravel"],
     "license": "PolyForm-Noncommercial-1.0.0",
     "type": "project",
