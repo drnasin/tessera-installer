@@ -7,6 +7,8 @@ namespace Tessera\Installer\Commands;
 use Tessera\Installer\Console;
 use Tessera\Installer\Plan\PlanCompiler;
 use Tessera\Installer\Plan\PlanStep;
+use Tessera\Installer\ToolPreference;
+use Tessera\Installer\ToolRouter;
 
 /**
  * `tessera plan show <plan.json>`
@@ -15,9 +17,30 @@ use Tessera\Installer\Plan\PlanStep;
  * tabular per-step summary (id, complexity, adapter, prompt fingerprint,
  * deps). Useful right after `plan compile` to verify that the plan is
  * what you expect before executing it.
+ *
+ * Adapter/model display (issue #26): the two most cost-relevant facts per
+ * step are which AI tool and which model will run it. Rather than always
+ * printing opaque `(router)`/`(default)` placeholders, the command resolves
+ * each step's complexity through the SAME routing used at execution time
+ * (`ToolRouter` + `ToolPreference::fromEnv()`) and shows the concrete pair —
+ * but only when AI tools are actually detectable on this machine. When no
+ * tools are found (e.g. CI), it falls back to the placeholders so the output
+ * is honest that resolution could not happen. Manifest-pinned
+ * `adapter_hint`/`model_hint` values always display verbatim.
  */
 final class PlanShowCommand implements CommandInterface
 {
+    /**
+     * @param  ToolRouter|null  $router  Routing source for live adapter/model
+     *                                   resolution. Null means "auto-detect at
+     *                                   runtime" (`ToolRouter::detect`); tests
+     *                                   inject an explicit router so BOTH the
+     *                                   resolved path and the no-tools path are
+     *                                   deterministic regardless of what is
+     *                                   installed on the machine.
+     */
+    public function __construct(private ?ToolRouter $router = null) {}
+
     public function description(): string
     {
         return 'Show the contents of a compiled plan.json.';
@@ -74,17 +97,21 @@ final class PlanShowCommand implements CommandInterface
         Console::bold('Steps (topological order):');
         Console::line();
 
+        // Resolve once: auto-detect when no router was injected. detect()
+        // returns null when no AI CLI is installed (e.g. CI), which keeps the
+        // placeholders for every step.
+        $router = $this->router ?? ToolRouter::detect(ToolPreference::fromEnv());
+
         foreach ($plan->inTopologicalOrder() as $idx => $step) {
-            $this->printStep($idx + 1, $step);
+            $this->printStep($idx + 1, $step, $router);
         }
 
         return 0;
     }
 
-    private function printStep(int $position, PlanStep $step): void
+    private function printStep(int $position, PlanStep $step, ?ToolRouter $router): void
     {
-        $adapterDisplay = $step->adapterHint ?? '(router)';
-        $modelDisplay = $step->modelHint ?? '(default)';
+        [$adapterDisplay, $modelDisplay] = $this->resolveDisplay($step, $router);
         $deps = $step->dependencies === [] ? '-' : implode(', ', $step->dependencies);
         $fpShort = substr($step->promptFingerprint, 0, 12);
 
@@ -100,5 +127,39 @@ final class PlanShowCommand implements CommandInterface
         }
 
         Console::line();
+    }
+
+    /**
+     * Decide the adapter/model strings for a step.
+     *
+     * Precedence:
+     *   1. Manifest-pinned `adapter_hint` → display verbatim (model from
+     *      `model_hint`, else `(default)`). No live resolution, no suffix.
+     *   2. No router, or router resolves nothing for this complexity →
+     *      `(router)`/`(default)` placeholders, identical to pre-#26 output.
+     *   3. Router resolves a concrete tool+model → show it, with a suffix
+     *      noting the resolution is a now-snapshot that may differ at run time
+     *      if tool availability changes.
+     *
+     * @return array{0: string, 1: string} [adapterDisplay, modelDisplay]
+     */
+    private function resolveDisplay(PlanStep $step, ?ToolRouter $router): array
+    {
+        if ($step->adapterHint !== null) {
+            return [$step->adapterHint, $step->modelHint ?? '(default)'];
+        }
+
+        $selection = $router?->resolve($step->complexity);
+
+        if ($selection === null) {
+            return ['(router)', '(default)'];
+        }
+
+        $model = $selection->model ?? '(default)';
+
+        return [
+            $selection->tool->name(),
+            $model.' (resolved now; may differ at run time if availability changes)',
+        ];
     }
 }
