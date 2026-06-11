@@ -91,6 +91,13 @@ if ($command === 'doctor') {
     exit(0);
 }
 
+// ─── Stacks ───
+
+if ($command === 'stacks') {
+    $cmd = new \Tessera\Installer\Commands\StacksCommand;
+    exit($cmd->run(array_slice($args, 1)));
+}
+
 // ─── Plan subcommands (compile / show / diff) ───
 
 if ($command === 'plan') {
@@ -174,15 +181,18 @@ exit(1);
 
 function showHelp(): void
 {
+    $stackNames = implode('|', array_keys(StackRegistry::all()));
+
     Console::line();
     Console::cyan('  TESSERA — AI-Native CMS Installer');
     Console::line();
     Console::line('  Usage:');
     Console::line('    tessera new {project-name}                       Create a new Tessera project');
     Console::line('    tessera new {project-name} --force               Overwrite existing directory');
-    Console::line('    tessera new {project-name} --stack=<name>        Skip AI stack selection');
+    Console::line("    tessera new {project-name} --stack=<{$stackNames}>  Skip AI stack selection");
     Console::line('    tessera new {project-name} --requirements-fixture=<path>  Skip interactive Q&A');
     Console::line('    tessera doctor                       Check if everything is ready');
+    Console::line('    tessera stacks                       List available stacks and availability');
     Console::line('    tessera tools                        Show available AI tools');
     Console::line('    tessera plan compile <yaml> [-o]     Compile a stack manifest to plan.json');
     Console::line('    tessera plan show [<plan.json>]      Show what a compiled plan will do');
