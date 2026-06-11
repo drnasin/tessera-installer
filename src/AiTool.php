@@ -155,8 +155,12 @@ class AiTool
 
     /**
      * Execute a prompt and return the output.
+     *
+     * @param  (callable(int): void)|null  $onTick  Invoked from the read loop with the
+     *                                               elapsed seconds; lets callers drive a
+     *                                               live progress indicator. Must not throw.
      */
-    public function execute(string $prompt, string $workingDir, int $timeout = 600, ?string $model = null): AiResponse
+    public function execute(string $prompt, string $workingDir, int $timeout = 600, ?string $model = null, ?callable $onTick = null): AiResponse
     {
         $command = $this->config['execute'];
 
@@ -200,6 +204,12 @@ class AiTool
             $error = '';
             $startTime = time();
 
+            // Emit an initial tick so the progress indicator shows immediately,
+            // before the first poll sleep (the AI call is otherwise silent).
+            if ($onTick !== null) {
+                $onTick(0);
+            }
+
             while (true) {
                 $status = proc_get_status($process);
 
@@ -222,6 +232,10 @@ class AiTool
                     proc_terminate($process);
 
                     return new AiResponse(false, $output, 'Timeout after '.$timeout.'s', 124);
+                }
+
+                if ($onTick !== null) {
+                    $onTick(time() - $startTime);
                 }
 
                 usleep(100_000); // 100ms
