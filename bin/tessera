@@ -50,7 +50,9 @@ if (! $loaded) {
     exit(1);
 }
 
+use Tessera\Installer\AiAuthProbe;
 use Tessera\Installer\AiTool;
+use Tessera\Installer\AuthProbeStatus;
 use Tessera\Installer\Cli\ProjectDirectoryName;
 use Tessera\Installer\Console;
 use Tessera\Installer\NewCommand;
@@ -87,8 +89,7 @@ if ($command === 'tools') {
 // ─── Doctor ───
 
 if ($command === 'doctor') {
-    showDoctor();
-    exit(0);
+    exit(showDoctor());
 }
 
 // ─── Plan subcommands (compile / show / diff) ───
@@ -318,7 +319,11 @@ function installerVersion(): string
     return 'dev';
 }
 
-function showDoctor(): void
+/**
+ * Run the system check. Returns the process exit code: 0 when the environment
+ * is ready, 1 when a required tool is missing or no AI tool is usable.
+ */
+function showDoctor(): int
 {
     $system = SystemInfo::detect();
 
@@ -363,8 +368,36 @@ function showDoctor(): void
         Console::line('    npm install -g @openai/codex');
         $allGood = false;
     } else {
+        // Detection only proves the binary exists and reports a version. A
+        // logged-out CLI passes that check but fails the first real AI call,
+        // so probe each tool's auth state too (issue #23). A tool is "usable"
+        // when it is authenticated or its auth state could not be determined;
+        // only a conclusive logged-out result is unusable.
+        $probe = new AiAuthProbe;
+        $usableAiTools = 0;
+
         foreach ($aiTools as $name => $info) {
-            Console::success("{$name} — {$info['version']}");
+            $result = $probe->probe($name, $info['version']);
+
+            if ($result->status === AuthProbeStatus::LoggedOut) {
+                Console::warn("{$name} — installed but not logged in (run: {$result->loginCommand})");
+            } elseif ($result->status === AuthProbeStatus::Unverified) {
+                Console::success("{$name} — {$info['version']} (login not verified)");
+            } else {
+                Console::success("{$name} — {$info['version']}");
+            }
+
+            if ($result->isUsable()) {
+                $usableAiTools++;
+            }
+        }
+
+        // Tools are installed but every one is conclusively logged out: doctor
+        // would otherwise stay green and the first build would fail.
+        if ($usableAiTools === 0) {
+            Console::line();
+            Console::fail('No usable AI tool — every detected CLI is logged out.');
+            $allGood = false;
         }
     }
 
@@ -402,4 +435,6 @@ function showDoctor(): void
     }
 
     Console::line();
+
+    return $allGood ? 0 : 1;
 }
