@@ -7,6 +7,36 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.12.0] – 2026-06-11
+
+### Added
+
+- **`plan show` now displays the concrete adapter and model per step.** Instead
+  of always printing opaque `(router)`/`(default)` placeholders, the command
+  resolves each step's complexity through the same routing used at execution
+  time (`ToolRouter` + `ToolPreference::fromEnv()`) and shows the real tool +
+  model pair (e.g. `adapter: claude  model: claude-opus-4-8 (resolved now; may
+  differ at run time if availability changes)`) on machines where AI CLIs are
+  detectable. Falls back to the placeholders when no tools are found (e.g. CI),
+  and manifest-pinned `adapter_hint`/`model_hint` values still display verbatim —
+  so the "see what AI will do before spending tokens" promise now surfaces the
+  two most cost-relevant facts. (#26)
+
+### Changed
+
+- **CLI strings aligned with the multi-stack positioning.** The `--help` header
+  and the `composer.json` description no longer say "AI-Native CMS Installer" —
+  the tool builds Laravel, Node, Go, Flutter, and static sites, so they now read
+  "AI Project Installer". Package name left unchanged. (#24)
+
+### Fixed
+
+- **`plan show` path separators normalised and a next-step hint added.** The
+  not-found error no longer mixes `\` and `/`: a new `Console::normalizePath()`
+  collapses displayed paths to the platform separator across plan show/compile/
+  diff. The error now also tells the user how to get a plan —
+  `Run: tessera plan compile <stack.yaml> to generate .tessera/plan.json`. (#25)
+
 ### Security
 
 - **Behavioral-config isolation for the requirements interview.** AI CLIs spawned
@@ -28,6 +58,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `CLAUDE.md` / `.ai/` instructions still shape the build. Gemini exposes no
   documented auth-safe flag and is left as-is. Opt out with
   `TESSERA_ISOLATE_AI_CONFIG=0`. (#15)
+
+### Documentation
+
+- **`CONTRIBUTING.md` de-staled and Pint made runnable from a standalone
+  clone.** Removed the hardcoded test count (the README badge / CI is the source
+  of truth) and added `laravel/pint` to `require-dev`, so the documented
+  `vendor/bin/pint src/ tests/` now works after a plain `git clone` instead of
+  assuming a parent monorepo checkout. (#27)
 
 ## [3.11.4] – 2026-05-30
 
