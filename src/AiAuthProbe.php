@@ -59,6 +59,40 @@ final class AiAuthProbe
     ) {}
 
     /**
+     * Whether the AI-tools section should FAIL `tessera doctor` (exit 1).
+     *
+     * Two cases are deliberately distinct (issue #23 + approval correction):
+     *
+     *   - No AI tool installed at all (`$probeResults === []`): NOT a failure.
+     *     This is informational — doctor prints "No AI tools found!" and stays
+     *     exit 0, preserving the long-standing behaviour the CI CLI-smoke test
+     *     relies on (runners have zero AI tools). A user simply hasn't
+     *     installed one yet.
+     *   - One or more tools installed but EVERY one is conclusively logged out:
+     *     this IS a failure (exit 1). It is the regression issue #23 fixes — a
+     *     green doctor followed by a build that dies on the first AI call. It
+     *     cannot occur on a bare CI runner (no tools → first case).
+     *
+     * Unverified tools count as usable, so a probe gap never trips this.
+     *
+     * @param array<int, AuthProbeResult> $probeResults Probe results for the detected tools.
+     */
+    public static function allInstalledToolsLoggedOut(array $probeResults): bool
+    {
+        if ($probeResults === []) {
+            return false;
+        }
+
+        foreach ($probeResults as $result) {
+            if ($result->isUsable()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Probe a single detected AI tool's authentication state.
      *
      * @param string $toolName One of claude / codex / gemini (the names from AiTool::tools()).

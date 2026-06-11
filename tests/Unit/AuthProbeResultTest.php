@@ -6,6 +6,7 @@ namespace Tessera\Installer\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Tessera\Installer\AiAuthProbe;
 use Tessera\Installer\AuthProbeResult;
 use Tessera\Installer\AuthProbeStatus;
 
@@ -83,5 +84,46 @@ final class AuthProbeResultTest extends TestCase
     private function countUsable(array $results): int
     {
         return count(array_filter($results, fn (AuthProbeResult $r): bool => $r->isUsable()));
+    }
+
+    /**
+     * The doctor AI-section exit verdict. The "no AI tool installed at all"
+     * case must NOT fail doctor (exit 0) — this is the long-standing behaviour
+     * the CI CLI-smoke step depends on (runners have zero AI tools). Only a
+     * present-but-all-logged-out fleet fails (exit 1).
+     */
+    #[Test]
+    public function no_tools_installed_does_not_fail_doctor(): void
+    {
+        // Empty = "No AI tools found!" → informational, stays exit 0.
+        $this->assertFalse(AiAuthProbe::allInstalledToolsLoggedOut([]));
+    }
+
+    #[Test]
+    public function all_installed_tools_logged_out_fails_doctor(): void
+    {
+        $this->assertTrue(AiAuthProbe::allInstalledToolsLoggedOut([
+            AuthProbeResult::loggedOut('claude', '2.1.173', 'claude auth login'),
+            AuthProbeResult::loggedOut('codex', '0.139.0', 'codex login'),
+        ]));
+    }
+
+    #[Test]
+    public function one_authenticated_tool_keeps_doctor_green(): void
+    {
+        $this->assertFalse(AiAuthProbe::allInstalledToolsLoggedOut([
+            AuthProbeResult::loggedOut('claude', '2.1.173', 'claude auth login'),
+            AuthProbeResult::authenticated('codex', '0.139.0', 'codex login'),
+        ]));
+    }
+
+    #[Test]
+    public function one_unverified_tool_keeps_doctor_green(): void
+    {
+        // A probe gap (unverified) must never trip the exit-1 verdict.
+        $this->assertFalse(AiAuthProbe::allInstalledToolsLoggedOut([
+            AuthProbeResult::loggedOut('claude', '2.1.173', 'claude auth login'),
+            AuthProbeResult::unverified('gemini', '1.0.0', 'gemini'),
+        ]));
     }
 }
