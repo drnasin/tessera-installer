@@ -35,11 +35,20 @@ final class NewCommand
 
     private ?string $requirementsFixturePath;
 
+    /**
+     * Test-only seam: a pre-supplied first interview question that bypasses the
+     * opening AI call in gatherRequirements(). Lets unit tests drive the
+     * re-prompt loop deterministically without a live AI tool or router. NOT
+     * wired into the bin/tessera dispatch — production always asks the AI.
+     */
+    private ?string $interviewFirstQuestion;
+
     public function __construct(
         string $directory,
         bool $force = false,
         ?string $forcedStack = null,
         ?string $requirementsFixturePath = null,
+        ?string $interviewFirstQuestion = null,
     ) {
         $directoryError = ProjectDirectoryName::validate($directory);
         if ($directoryError !== null) {
@@ -51,6 +60,7 @@ final class NewCommand
         $this->force = $force;
         $this->forcedStack = $forcedStack;
         $this->requirementsFixturePath = $requirementsFixturePath;
+        $this->interviewFirstQuestion = $interviewFirstQuestion;
         $this->system = SystemInfo::detect();
     }
 
@@ -509,10 +519,15 @@ RULES:
 Ask your FIRST question now — start with understanding the business.
 PROMPT;
 
-        // isolateConfig: this output is the product's voice — keep it
-        // deterministic and free of the user's personal AI instruction files.
-        $response = $this->askPrimary($initPrompt, 60, isolateConfig: true);
-        $aiQuestion = $response->success ? $response->output : 'Tell me about the project — what does the client do?';
+        if ($this->interviewFirstQuestion !== null) {
+            // Test-only seam: skip the opening AI call (see property docblock).
+            $aiQuestion = $this->interviewFirstQuestion;
+        } else {
+            // isolateConfig: this output is the product's voice — keep it
+            // deterministic and free of the user's personal AI instruction files.
+            $response = $this->askPrimary($initPrompt, 60, isolateConfig: true);
+            $aiQuestion = $response->success ? $response->output : 'Tell me about the project — what does the client do?';
+        }
 
         Console::line($aiQuestion);
         Console::line();
@@ -524,10 +539,28 @@ PROMPT;
         for ($i = 0; $i < $maxRounds; $i++) {
             $answer = Console::ask('');
 
-            if (trim($answer) === '' && $i === 0) {
-                Console::error('I need to know at least what the client does.');
+            // First answer is mandatory: re-prompt instead of aborting the whole
+            // run (which would re-pay the plan-tier Q&A and the opening AI call on
+            // restart — issue #20). Re-display the already-fetched question; no new
+            // AI call fires. After 3 empty answers, give up cleanly (caller exits 1).
+            if ($i === 0) {
+                $maxEmptyAttempts = 3;
 
-                return null;
+                for ($attempt = 0; trim($answer) === '' && $attempt < $maxEmptyAttempts; $attempt++) {
+                    Console::error('I need to know at least what the client does.');
+
+                    // Re-ask on every attempt except the last, where we have
+                    // already shown the error for the third empty answer.
+                    if ($attempt < $maxEmptyAttempts - 1) {
+                        Console::line($aiQuestion);
+                        Console::line();
+                        $answer = Console::ask('');
+                    }
+                }
+
+                if (trim($answer) === '') {
+                    return null;
+                }
             }
 
             $conversation[] = ['role' => 'junior', 'text' => $answer];
