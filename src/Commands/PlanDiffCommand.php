@@ -67,9 +67,12 @@ final class PlanDiffCommand implements CommandInterface
             return 1;
         }
 
+        $beforePath = Console::normalizePath($args[0]);
+        $afterPath = Console::normalizePath($args[1]);
+
         try {
-            $before = (new PlanCompiler)->read($args[0]);
-            $after = (new PlanCompiler)->read($args[1]);
+            $before = (new PlanCompiler)->read($beforePath);
+            $after = (new PlanCompiler)->read($afterPath);
         } catch (\Throwable $e) {
             Console::error('Could not load plans: '.$e->getMessage());
 
@@ -80,8 +83,8 @@ final class PlanDiffCommand implements CommandInterface
 
         Console::line();
         Console::cyan('Plan diff');
-        Console::line("  before: {$args[0]}  hash {$this->shortHash($diff->beforeHash)}");
-        Console::line("  after:  {$args[1]}  hash {$this->shortHash($diff->afterHash)}");
+        Console::line("  before: {$beforePath}  hash {$this->shortHash($diff->beforeHash)}");
+        Console::line("  after:  {$afterPath}  hash {$this->shortHash($diff->afterHash)}");
         Console::line();
 
         if ($diff->isEmpty()) {

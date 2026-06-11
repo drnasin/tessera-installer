@@ -1,6 +1,6 @@
 {
     "name": "tessera/installer",
-    "description": "Tessera AI-Native CMS Installer — AI builds your project",
+    "description": "Tessera AI Project Installer — AI builds your project",
     "keywords": ["tessera", "cms", "ai", "installer", "laravel"],
     "license": "PolyForm-Noncommercial-1.0.0",
     "type": "project",
@@ -9,7 +9,8 @@
         "symfony/yaml": "^8.0"
     },
     "require-dev": {
-        "phpunit/phpunit": "^11.0"
+        "phpunit/phpunit": "^11.0",
+        "laravel/pint": "^1.27"
     },
     "autoload": {
         "psr-4": {

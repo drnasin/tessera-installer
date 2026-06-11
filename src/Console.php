@@ -261,7 +261,7 @@ final class Console
 
     private static function commandExecutor(): CommandExecutor
     {
-        return self::$commandExecutor ??= new CommandRunner();
+        return self::$commandExecutor ??= new CommandRunner;
     }
 
     private static function workingDirectory(?string $workingDir): string
@@ -284,5 +284,14 @@ final class Console
         $pos = strpos($text, "\n");
 
         return $pos !== false ? substr($text, 0, $pos) : $text;
+    }
+
+    /**
+     * Normalize a path to the platform separator so displayed paths don't mix
+     * `\` (Windows cwd) and `/` (hardcoded literals).
+     */
+    public static function normalizePath(string $path): string
+    {
+        return str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
     }
 }
