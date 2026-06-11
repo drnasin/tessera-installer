@@ -6,10 +6,12 @@ namespace Tessera\Installer\Tests\Unit\Commands;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Tessera\Installer\AiTool;
 use Tessera\Installer\Commands\PlanShowCommand;
 use Tessera\Installer\Complexity;
 use Tessera\Installer\Plan\PlanCompiler;
 use Tessera\Installer\Plan\PlanStep;
+use Tessera\Installer\ToolRouter;
 
 final class PlanShowCommandTest extends TestCase
 {
@@ -71,5 +73,44 @@ final class PlanShowCommandTest extends TestCase
             $this->assertSame(0, $code, "Flag {$flag} should exit 0");
             $this->assertStringContainsString('tessera plan show', $output);
         }
+    }
+
+    #[Test]
+    public function resolves_concrete_adapter_and_model_when_tools_are_detectable(): void
+    {
+        // Inject an explicit router with a faked Claude so resolution is
+        // deterministic regardless of what is installed on the runner. The
+        // default preference routes SIMPLE → claude haiku, COMPLEX → claude opus.
+        $router = new ToolRouter(['claude' => AiTool::fake('claude')]);
+
+        ob_start();
+        $code = (new PlanShowCommand($router))->run([$this->planPath]);
+        $output = (string) ob_get_clean();
+
+        $this->assertSame(0, $code);
+        $this->assertStringContainsString('adapter:    claude', $output);
+        $this->assertStringContainsString('claude-haiku-4-5', $output);
+        $this->assertStringContainsString('claude-opus-4-8', $output);
+        $this->assertStringContainsString('resolved now; may differ at run time', $output);
+        // The unresolved placeholders must NOT appear when resolution succeeds.
+        $this->assertStringNotContainsString('(router)', $output);
+        $this->assertStringNotContainsString('(default)', $output);
+    }
+
+    #[Test]
+    public function keeps_placeholders_when_router_resolves_nothing(): void
+    {
+        // A router with no tools resolves nothing for any complexity, so the
+        // output must keep the (router)/(default) placeholders — deterministic
+        // even on a machine where claude IS installed (we never auto-detect here).
+        $emptyRouter = new ToolRouter([]);
+
+        ob_start();
+        $code = (new PlanShowCommand($emptyRouter))->run([$this->planPath]);
+        $output = (string) ob_get_clean();
+
+        $this->assertSame(0, $code);
+        $this->assertStringContainsString('adapter:    (router)    model: (default)', $output);
+        $this->assertStringNotContainsString('resolved now', $output);
     }
 }
