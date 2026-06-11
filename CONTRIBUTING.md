@@ -11,7 +11,7 @@ composer install
 ## Running Tests
 
 ```bash
-# All tests (399 tests, zero token usage)
+# All tests (zero token usage)
 vendor/bin/phpunit
 
 # Specific test file
@@ -28,8 +28,7 @@ Tests run on Windows, macOS, and Linux via GitHub Actions.
 We use Laravel Pint. Run before committing:
 
 ```bash
-# From the parent tessera project (Pint is a dev dependency there)
-../vendor/bin/pint src/ tests/
+vendor/bin/pint src/ tests/
 ```
 
 ## Architecture
