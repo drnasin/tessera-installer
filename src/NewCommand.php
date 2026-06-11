@@ -23,7 +23,7 @@ final class NewCommand
 
     private string $fullPath;
 
-    private ToolRouter $router;
+    private ?ToolRouter $router = null;
 
     private SystemInfo $system;
 
