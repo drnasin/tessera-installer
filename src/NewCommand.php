@@ -56,6 +56,19 @@ final class NewCommand
 
     public function run(): int
     {
+        // Validate --stack BEFORE any prompt, system check, or AI call. An
+        // unknown forced stack must fail fast — otherwise the full wizard runs
+        // (plan-tier questions + the token-burning AI interview) only to fall
+        // back to AI selection in buildProject(). The resume path passes the
+        // saved stack straight to buildProject() and is intentionally not
+        // routed through this guard.
+        if ($this->forcedStack !== null && StackRegistry::get($this->forcedStack) === null) {
+            $available = implode(', ', array_keys(StackRegistry::all()));
+            Console::error("Unknown stack '{$this->forcedStack}'. Available stacks: {$available}");
+
+            return 1;
+        }
+
         $this->showBanner();
         $this->showFirstRunNotice();
 
