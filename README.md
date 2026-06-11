@@ -82,11 +82,12 @@ Every stack is described in YAML. The same engine drives them all. [Authoring a 
 tessera doctor                                       # is my system ready?
 tessera new <dir>                                    # the main command
 tessera new <dir> --force                            # overwrite existing dir
-tessera new <dir> --stack=<name>                     # skip AI stack selection
+tessera new <dir> --stack=<name>                     # skip AI stack selection (names: tessera stacks)
 tessera new <dir> --requirements-fixture=<path>      # skip interactive Q&A (loads JSON)
 tessera plan compile <yaml> [-o <out.json>]          # compile manifest → plan.json
 tessera plan show [<plan.json>]                      # pretty-print a plan
 tessera plan diff <a.json> <b.json>                  # semantic diff (exit 0/1/2)
+tessera stacks                                       # list available stacks + system readiness
 tessera tools                                        # which AI tools are installed?
 tessera --version
 tessera --help
