@@ -23,8 +23,33 @@ final class PlanShowCommand implements CommandInterface
         return 'Show the contents of a compiled plan.json.';
     }
 
+    public function help(): void
+    {
+        Console::line();
+        Console::bold('tessera plan show — pretty-print a compiled plan.json');
+        Console::line();
+        Console::line('Usage:');
+        Console::line('  tessera plan show [<plan.json>]');
+        Console::line();
+        Console::line('Arguments:');
+        Console::line('  <plan.json>  Path to the compiled plan (default: ./.tessera/plan.json).');
+        Console::line();
+        Console::line('Options:');
+        Console::line('  -h, --help   Show this help.');
+        Console::line();
+        Console::line('Example:');
+        Console::line('  tessera plan show build/plan.json');
+        Console::line();
+    }
+
     public function run(array $args): int
     {
+        if (in_array('--help', $args, true) || in_array('-h', $args, true)) {
+            $this->help();
+
+            return 0;
+        }
+
         $path = $args[0] ?? getcwd().'/.tessera/plan.json';
 
         try {

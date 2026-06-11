@@ -35,11 +35,20 @@ final class NewCommand
 
     private ?string $requirementsFixturePath;
 
+    /**
+     * Test-only seam: a pre-supplied first interview question that bypasses the
+     * opening AI call in gatherRequirements(). Lets unit tests drive the
+     * re-prompt loop deterministically without a live AI tool or router. NOT
+     * wired into the bin/tessera dispatch — production always asks the AI.
+     */
+    private ?string $interviewFirstQuestion;
+
     public function __construct(
         string $directory,
         bool $force = false,
         ?string $forcedStack = null,
         ?string $requirementsFixturePath = null,
+        ?string $interviewFirstQuestion = null,
     ) {
         $directoryError = ProjectDirectoryName::validate($directory);
         if ($directoryError !== null) {
@@ -51,6 +60,7 @@ final class NewCommand
         $this->force = $force;
         $this->forcedStack = $forcedStack;
         $this->requirementsFixturePath = $requirementsFixturePath;
+        $this->interviewFirstQuestion = $interviewFirstQuestion;
         $this->system = SystemInfo::detect();
     }
 
@@ -509,10 +519,15 @@ RULES:
 Ask your FIRST question now — start with understanding the business.
 PROMPT;
 
-        // isolateConfig: this output is the product's voice — keep it
-        // deterministic and free of the user's personal AI instruction files.
-        $response = $this->askPrimary($initPrompt, 60, isolateConfig: true);
-        $aiQuestion = $response->success ? $response->output : 'Tell me about the project — what does the client do?';
+        if ($this->interviewFirstQuestion !== null) {
+            // Test-only seam: skip the opening AI call (see property docblock).
+            $aiQuestion = $this->interviewFirstQuestion;
+        } else {
+            // isolateConfig: this output is the product's voice — keep it
+            // deterministic and free of the user's personal AI instruction files.
+            $response = $this->askPrimary($initPrompt, 60, isolateConfig: true);
+            $aiQuestion = $response->success ? $response->output : 'Tell me about the project — what does the client do?';
+        }
 
         Console::line($aiQuestion);
         Console::line();
@@ -524,10 +539,28 @@ PROMPT;
         for ($i = 0; $i < $maxRounds; $i++) {
             $answer = Console::ask('');
 
-            if (trim($answer) === '' && $i === 0) {
-                Console::error('I need to know at least what the client does.');
+            // First answer is mandatory: re-prompt instead of aborting the whole
+            // run (which would re-pay the plan-tier Q&A and the opening AI call on
+            // restart — issue #20). Re-display the already-fetched question; no new
+            // AI call fires. After 3 empty answers, give up cleanly (caller exits 1).
+            if ($i === 0) {
+                $maxEmptyAttempts = 3;
 
-                return null;
+                for ($attempt = 0; trim($answer) === '' && $attempt < $maxEmptyAttempts; $attempt++) {
+                    Console::error('I need to know at least what the client does.');
+
+                    // Re-ask on every attempt except the last, where we have
+                    // already shown the error for the third empty answer.
+                    if ($attempt < $maxEmptyAttempts - 1) {
+                        Console::line($aiQuestion);
+                        Console::line();
+                        $answer = Console::ask('');
+                    }
+                }
+
+                if (trim($answer) === '') {
+                    return null;
+                }
             }
 
             $conversation[] = ['role' => 'junior', 'text' => $answer];
@@ -875,9 +908,14 @@ PROMPT;
     }
 
     /**
-     * Determine tool preferences — from env vars or by asking the user.
+     * Determine tool preferences. Precedence: env vars > saved config >
+     * interactive prompt. Answers from the prompt are persisted to
+     * ~/.tessera/config.json so later runs skip the questions entirely.
+     *
+     * @param  array<string, AiTool>|null  $detectedTools  Injectable for tests;
+     *                                                      null = detect from the system.
      */
-    private function resolveToolPreference(): ToolPreference
+    private function resolveToolPreference(?array $detectedTools = null): ToolPreference
     {
         $envPref = ToolPreference::fromEnv();
 
@@ -887,30 +925,49 @@ PROMPT;
         }
 
         // Detect available tools first
-        $detected = AiTool::detectAllInstances();
+        $detected = $detectedTools ?? AiTool::detectAllInstances();
 
         if (empty($detected)) {
             return $envPref;
         }
 
+        $userConfig = UserConfig::forCurrentUser();
+        $savedPlans = $userConfig?->loadPlans() ?? [];
+
         // Plan options per tool
         $planOptions = [
-            'claude' => ['max' => 'Max (unlimited)', 'pro' => 'Pro', 'free' => 'Free'],
+            'claude' => ['max' => 'Max', 'pro' => 'Pro', 'free' => 'Free'],
             'codex' => ['plus' => 'Plus (ChatGPT Plus)', 'free' => 'Free'],
             'gemini' => ['pro' => 'Pro (Google One AI Premium)', 'free' => 'Free'],
         ];
 
-        $plans = [];
-
-        Console::line();
-        Console::bold('What AI plans do you have? (affects which tool handles each task)');
-
+        // Only prompt for detected tools we have no saved answer for. A user who
+        // installs a new tool (e.g. gemini) after saving claude/codex gets asked
+        // only about the new one — existing answers are preserved.
+        $toolsToPrompt = [];
         foreach ($detected as $name => $tool) {
             if (! isset($planOptions[$name])) {
                 continue;
             }
 
-            $options = $planOptions[$name];
+            if (! isset($savedPlans[$name])) {
+                $toolsToPrompt[$name] = $planOptions[$name];
+            }
+        }
+
+        // Everything detected already has a saved answer — skip the prompt.
+        if (empty($toolsToPrompt) && ! empty($savedPlans)) {
+            Console::line('Using saved AI plans ('.$this->describePlans($savedPlans).') — set TESSERA_CLAUDE_PLAN etc. to override.');
+
+            return new ToolPreference(plans: $savedPlans);
+        }
+
+        $plans = $savedPlans;
+
+        Console::line();
+        Console::bold('What AI plans do you have? (affects which tool handles each task)');
+
+        foreach ($toolsToPrompt as $name => $options) {
             $optionValues = array_keys($options);
             $optionLabels = array_values($options);
 
@@ -928,7 +985,25 @@ PROMPT;
 
         Console::line();
 
+        // Persist (merged) answers so later runs skip the prompt.
+        $userConfig?->savePlans($plans);
+
         return new ToolPreference(plans: $plans);
+    }
+
+    /**
+     * Human-readable "claude=max, codex=plus" summary for the saved-plans notice.
+     *
+     * @param  array<string, string>  $plans
+     */
+    private function describePlans(array $plans): string
+    {
+        $parts = [];
+        foreach ($plans as $tool => $plan) {
+            $parts[] = "{$tool}={$plan}";
+        }
+
+        return implode(', ', $parts);
     }
 
     private function formatConversation(array $conversation): string

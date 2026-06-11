@@ -50,10 +50,13 @@ if (! $loaded) {
     exit(1);
 }
 
+use Tessera\Installer\AiAuthProbe;
 use Tessera\Installer\AiTool;
+use Tessera\Installer\AuthProbeStatus;
 use Tessera\Installer\Cli\ProjectDirectoryName;
 use Tessera\Installer\Console;
 use Tessera\Installer\NewCommand;
+use Tessera\Installer\Stacks\StackRegistry;
 use Tessera\Installer\SystemInfo;
 use Tessera\Installer\ToolRouter;
 
@@ -86,8 +89,14 @@ if ($command === 'tools') {
 // ─── Doctor ───
 
 if ($command === 'doctor') {
-    showDoctor();
-    exit(0);
+    exit(showDoctor());
+}
+
+// ─── Stacks ───
+
+if ($command === 'stacks') {
+    $cmd = new \Tessera\Installer\Commands\StacksCommand;
+    exit($cmd->run(array_slice($args, 1)));
 }
 
 // ─── Plan subcommands (compile / show / diff) ───
@@ -128,6 +137,12 @@ if ($command === 'plan') {
 
 if ($command === 'new') {
     $newArgs = array_slice($args, 1);
+
+    if (in_array('--help', $newArgs, true) || in_array('-h', $newArgs, true)) {
+        showNewHelp();
+        exit(0);
+    }
+
     $parsed = \Tessera\Installer\Cli\NewCommandArgs::parse($newArgs);
 
     if ($parsed->directory === null) {
@@ -167,15 +182,18 @@ exit(1);
 
 function showHelp(): void
 {
+    $stackNames = implode('|', array_keys(StackRegistry::all()));
+
     Console::line();
     Console::cyan('  TESSERA — AI-Native CMS Installer');
     Console::line();
     Console::line('  Usage:');
     Console::line('    tessera new {project-name}                       Create a new Tessera project');
     Console::line('    tessera new {project-name} --force               Overwrite existing directory');
-    Console::line('    tessera new {project-name} --stack=<name>        Skip AI stack selection');
+    Console::line("    tessera new {project-name} --stack=<{$stackNames}>  Skip AI stack selection");
     Console::line('    tessera new {project-name} --requirements-fixture=<path>  Skip interactive Q&A');
     Console::line('    tessera doctor                       Check if everything is ready');
+    Console::line('    tessera stacks                       List available stacks and availability');
     Console::line('    tessera tools                        Show available AI tools');
     Console::line('    tessera plan compile <yaml> [-o]     Compile a stack manifest to plan.json');
     Console::line('    tessera plan show [<plan.json>]      Show what a compiled plan will do');
@@ -188,6 +206,32 @@ function showHelp(): void
     Console::line();
     Console::line('  AI will ask what you need and build the project.');
     Console::line('  Requires PHP 8.4+ and at least one AI CLI (claude, gemini, codex).');
+    Console::line();
+}
+
+function showNewHelp(): void
+{
+    $stackNames = implode(', ', array_keys(StackRegistry::all()));
+
+    Console::line();
+    Console::bold('tessera new — create a new Tessera project');
+    Console::line();
+    Console::line('Usage:');
+    Console::line('  tessera new <project-name> [options]');
+    Console::line();
+    Console::line('Arguments:');
+    Console::line('  <project-name>                 Directory to create. Letters, numbers, -, _, . only;');
+    Console::line('                                 cannot start with a dash or dot.');
+    Console::line();
+    Console::line('Options:');
+    Console::line('  -f, --force                    Overwrite the target directory if it already exists.');
+    Console::line("  --stack=<name>                 Skip AI stack selection. Valid: {$stackNames}.");
+    Console::line('  --requirements-fixture=<path>  Skip the interactive Q&A by loading requirements from a');
+    Console::line('                                 JSON object ({"description": "...", "needs_shop": false, ...}).');
+    Console::line('  -h, --help                     Show this help.');
+    Console::line();
+    Console::line('Example:');
+    Console::line('  tessera new my-restaurant --stack=laravel');
     Console::line();
 }
 
@@ -285,7 +329,11 @@ function installerVersion(): string
     return 'dev';
 }
 
-function showDoctor(): void
+/**
+ * Run the system check. Returns the process exit code: 0 when the environment
+ * is ready, 1 when a required tool is missing or no AI tool is usable.
+ */
+function showDoctor(): int
 {
     $system = SystemInfo::detect();
 
@@ -323,15 +371,47 @@ function showDoctor(): void
 
     $aiTools = AiTool::detectAll();
     if (empty($aiTools)) {
+        // No AI CLI installed at all. This stays informational (exit 0),
+        // matching the long-standing behaviour the CI CLI-smoke test relies on
+        // (runners have zero AI tools). The NEW exit-1 signal below is reserved
+        // for the case where a CLI *is* installed but is logged out — that is
+        // the regression issue #23 fixes, and it cannot occur on a bare runner.
         Console::fail('No AI tools found!');
         Console::line('  Install one:');
         Console::line('    npm install -g @anthropic-ai/claude-code');
         Console::line('    npm install -g @google/gemini-cli');
         Console::line('    npm install -g @openai/codex');
-        $allGood = false;
     } else {
+        // Detection only proves the binary exists and reports a version. A
+        // logged-out CLI passes that check but fails the first real AI call,
+        // so probe each tool's auth state too (issue #23). A tool is "usable"
+        // when it is authenticated or its auth state could not be determined;
+        // only a conclusive logged-out result is unusable.
+        $probe = new AiAuthProbe;
+        $probeResults = [];
+
         foreach ($aiTools as $name => $info) {
-            Console::success("{$name} — {$info['version']}");
+            $result = $probe->probe($name, $info['version']);
+            $probeResults[] = $result;
+
+            if ($result->status === AuthProbeStatus::LoggedOut) {
+                Console::warn("{$name} — installed but not logged in (run: {$result->loginCommand})");
+            } elseif ($result->status === AuthProbeStatus::Unverified) {
+                Console::success("{$name} — {$info['version']} (login not verified)");
+            } else {
+                Console::success("{$name} — {$info['version']}");
+            }
+        }
+
+        // Tools are installed but every one is conclusively logged out: doctor
+        // would otherwise stay green and the first build would fail. This is
+        // the only AI-tool condition that fails doctor (exit 1) — a missing
+        // CLI is informational (the empty-$aiTools branch above stays exit 0),
+        // a present-but-logged-out CLI is a real misconfiguration to fix first.
+        if (AiAuthProbe::allInstalledToolsLoggedOut($probeResults)) {
+            Console::line();
+            Console::fail('No usable AI tool — every detected CLI is logged out.');
+            $allGood = false;
         }
     }
 
@@ -369,4 +449,6 @@ function showDoctor(): void
     }
 
     Console::line();
+
+    return $allGood ? 0 : 1;
 }

@@ -59,4 +59,17 @@ final class PlanShowCommandTest extends TestCase
 
         $this->assertSame(1, $code);
     }
+
+    #[Test]
+    public function help_flag_returns_zero_and_prints_usage(): void
+    {
+        foreach (['--help', '-h'] as $flag) {
+            ob_start();
+            $code = (new PlanShowCommand)->run([$flag]);
+            $output = (string) ob_get_clean();
+
+            $this->assertSame(0, $code, "Flag {$flag} should exit 0");
+            $this->assertStringContainsString('tessera plan show', $output);
+        }
+    }
 }
