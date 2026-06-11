@@ -106,7 +106,8 @@ final class PlanCompiler
     public function read(string $path): CompiledPlan
     {
         if (! is_file($path)) {
-            throw new \RuntimeException("Plan file not found: {$path}");
+            $displayPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
+            throw new \RuntimeException("Plan file not found: {$displayPath}");
         }
 
         $raw = file_get_contents($path);
@@ -121,15 +122,15 @@ final class PlanCompiler
 
         $errors = $this->validator->validate(SchemaVersion::PLAN, $decoded);
         if ($errors !== []) {
-            throw new \RuntimeException("Invalid plan: ".implode(' | ', $errors));
+            throw new \RuntimeException('Invalid plan: '.implode(' | ', $errors));
         }
 
         $plan = CompiledPlan::fromArray($decoded);
 
         if (! $plan->isHashValid()) {
             throw new \RuntimeException(
-                "Plan hash mismatch — file was hand-edited or corrupted. ".
-                "Recompile with `tessera new --plan`.",
+                'Plan hash mismatch — file was hand-edited or corrupted. '.
+                'Recompile with `tessera new --plan`.',
             );
         }
 
