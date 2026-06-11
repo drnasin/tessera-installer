@@ -61,6 +61,16 @@ final class PlanShowCommandTest extends TestCase
     }
 
     #[Test]
+    public function not_found_error_includes_hint(): void
+    {
+        ob_start();
+        (new PlanShowCommand)->run(['/tmp/no-plan-'.bin2hex(random_bytes(4)).'.json']);
+        $output = (string) ob_get_clean();
+
+        $this->assertStringContainsString('tessera plan compile', $output);
+    }
+
+    #[Test]
     public function help_flag_returns_zero_and_prints_usage(): void
     {
         foreach (['--help', '-h'] as $flag) {

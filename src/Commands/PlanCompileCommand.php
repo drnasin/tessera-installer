@@ -7,6 +7,7 @@ namespace Tessera\Installer\Commands;
 use Tessera\Installer\Console;
 use Tessera\Installer\Manifest\ManifestCompiler;
 use Tessera\Installer\Manifest\StackManifestLoader;
+use Tessera\Installer\Plan\PlanCompiler;
 
 /**
  * `tessera plan compile <manifest.yaml> [-o <output.json>]`
@@ -62,13 +63,15 @@ final class PlanCompileCommand implements CommandInterface
             return 1;
         }
 
-        $outputPath = $this->parseOutputFlag($args) ?? getcwd().'/.tessera/plan.json';
+        $outputPath = Console::normalizePath(
+            $this->parseOutputFlag($args) ?? getcwd().DIRECTORY_SEPARATOR.'.tessera'.DIRECTORY_SEPARATOR.'plan.json',
+        );
 
         try {
             $manifest = (new StackManifestLoader)->loadFromFile($manifestPath);
             $plan = (new ManifestCompiler)->compile($manifest);
 
-            (new \Tessera\Installer\Plan\PlanCompiler)->write($plan, $outputPath);
+            (new PlanCompiler)->write($plan, $outputPath);
         } catch (\Throwable $e) {
             Console::error('Compile failed: '.$e->getMessage());
 

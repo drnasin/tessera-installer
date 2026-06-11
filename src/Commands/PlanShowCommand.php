@@ -50,12 +50,15 @@ final class PlanShowCommand implements CommandInterface
             return 0;
         }
 
-        $path = $args[0] ?? getcwd().'/.tessera/plan.json';
+        $path = Console::normalizePath(
+            $args[0] ?? getcwd().DIRECTORY_SEPARATOR.'.tessera'.DIRECTORY_SEPARATOR.'plan.json',
+        );
 
         try {
             $plan = (new PlanCompiler)->read($path);
         } catch (\Throwable $e) {
             Console::error('Could not load plan: '.$e->getMessage());
+            Console::line('Hint: Run: tessera plan compile <stack.yaml> to generate .tessera/plan.json');
 
             return 1;
         }
