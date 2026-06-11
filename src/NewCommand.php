@@ -428,6 +428,26 @@ final class NewCommand
     }
 
     /**
+     * Run a primary-tool AI call with a live progress indicator.
+     *
+     * The interactive phase is otherwise silent for up to the timeout (60s+),
+     * which reads as a hang. This wraps every such call in a "⏳ asking {tool}…"
+     * status line that ticks while the subprocess runs and clears on completion.
+     * The indicator degrades to a single static line on non-TTY output.
+     */
+    private function askPrimary(string $prompt, int $timeout): AiResponse
+    {
+        $tool = $this->router->primary();
+        $progress = Console::progress("asking {$tool->name()}");
+
+        try {
+            return $tool->execute($prompt, getcwd(), $timeout, null, $progress->tick(...));
+        } finally {
+            $progress->finish();
+        }
+    }
+
+    /**
      * AI-driven conversation to understand what the junior needs.
      *
      * @return array<string, mixed>|null
@@ -478,7 +498,7 @@ RULES:
 Ask your FIRST question now — start with understanding the business.
 PROMPT;
 
-        $response = $this->router->primary()->execute($initPrompt, getcwd(), 60);
+        $response = $this->askPrimary($initPrompt, 60);
         $aiQuestion = $response->success ? $response->output : 'Tell me about the project — what does the client do?';
 
         Console::line($aiQuestion);
@@ -551,7 +571,7 @@ RULES:
 - NEVER use technical terms — keep it business-level
 PROMPT;
 
-            $response = $this->router->primary()->execute($followUpPrompt, getcwd(), 60);
+            $response = $this->askPrimary($followUpPrompt, 60);
 
             if (! $response->success || str_contains($response->output, 'ENOUGH_INFO')) {
                 break;
@@ -610,7 +630,7 @@ CONVERSATION:
 {$historyText}
 PROMPT;
 
-        $response = $this->router->primary()->execute($extractPrompt, getcwd(), 60);
+        $response = $this->askPrimary($extractPrompt, 60);
 
         if ($response->success) {
             $parsed = $this->parseJsonRequirements($response->output, $conversation);
@@ -657,8 +677,6 @@ PROMPT;
         $payments = ! empty($paymentProviders) ? implode(', ', $paymentProviders) : 'none';
         $special = $requirements['special'] ?? '';
 
-        Console::spinner('AI is choosing technology...');
-
         $prompt = <<<PROMPT
 You are a Tessera AI architect. Based on requirements, choose ONE technology.
 
@@ -685,7 +703,7 @@ Respond with ONLY valid JSON (no markdown):
 {"stack": "laravel", "reason": "one line why"}
 PROMPT;
 
-        $response = $this->router->primary()->execute($prompt, getcwd(), 60);
+        $response = $this->askPrimary($prompt, 60);
 
         if (! $response->success) {
             Console::warn('AI could not decide. Using Laravel as default.');
@@ -738,7 +756,7 @@ PROMPT;
         $systemContext = $this->system->buildAiContext();
         $missingList = implode("\n", array_map(fn (string $m): string => "- {$m}", $missing));
 
-        Console::spinner('AI is installing missing dependencies...');
+        Console::line('AI is installing missing dependencies...');
 
         $prompt = <<<PROMPT
 You need to install the following missing tools on this system:
@@ -757,7 +775,7 @@ INSTRUCTIONS:
 7. If one tool fails, continue with the others
 PROMPT;
 
-        $response = $this->router->primary()->execute($prompt, getcwd(), 300);
+        $response = $this->askPrimary($prompt, 300);
 
         if ($response->success) {
             Console::success('Dependency installation complete');
