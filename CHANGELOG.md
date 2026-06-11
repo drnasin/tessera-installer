@@ -7,6 +7,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **Behavioral-config isolation for the requirements interview.** AI CLIs spawned
+  by the installer discovered the user's *personal* instruction files — a global
+  `~/.claude/CLAUDE.md` saying "always reply in Croatian" made the English
+  requirements interview come back in Croatian, and more generally let unrelated
+  per-machine AI settings change the product's voice. v3.11.4 isolated
+  credentials but not behavioral config. Two-part fix: (1) the user-facing
+  interview / stack-selection prompts now pin output to English explicitly; (2)
+  those prompts run the AI CLI with behavioral-config isolation — `claude
+  --safe-mode` (disables CLAUDE.md/skills/MCP/hooks while preserving OAuth +
+  keychain auth) and `codex --ignore-user-config` (skips `config.toml`; auth
+  still uses `$CODEX_HOME`). `CLAUDE_CONFIG_DIR` relocation was rejected because
+  the `claude` CLI stores OAuth credentials *inside* the config dir
+  (`~/.claude/.credentials.json`), so relocating it would break authentication.
+  Isolation is **caller-scoped**: only the interview path (which runs before the
+  generated project exists, so there is no project config to lose) requests it;
+  build/review steps run inside the generated project unchanged, so a project
+  `CLAUDE.md` / `.ai/` instructions still shape the build. Gemini exposes no
+  documented auth-safe flag and is left as-is. Opt out with
+  `TESSERA_ISOLATE_AI_CONFIG=0`. (#15)
+
 ## [3.11.4] – 2026-05-30
 
 Security and quality-gate hardening pass — closes the open audit issues

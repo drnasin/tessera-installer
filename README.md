@@ -106,7 +106,13 @@ TESSERA_TOOL_PREFERENCE=gemini,claude,codex   # custom tool order
 TESSERA_TOOL_EXCLUDE=codex                    # never use this tool
 TESSERA_SAFE_AI=1             # opt out of --dangerously-skip-permissions for Claude
 TESSERA_AI_TIMEOUT=900        # seconds per AI step (default 900)
+TESSERA_ISOLATE_AI_CONFIG=0   # opt out of interview behavioral-config isolation
 ```
+
+By default the requirements interview runs the AI CLI isolated from your personal
+instruction files (`claude --safe-mode`, `codex --ignore-user-config`) so the
+interview is always in English and machine-independent. Auth is preserved. Set
+`TESSERA_ISOLATE_AI_CONFIG=0` only if a CLI flag ever breaks authentication on your setup.
 
 [Full security & permission model →](https://tessera-ai.net/docs/disclaimer)
 
