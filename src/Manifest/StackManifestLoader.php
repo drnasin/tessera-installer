@@ -26,7 +26,7 @@ use Tessera\Installer\Complexity;
  *         Build models for...
  *       prompt_version: "1"
  *       adapter_hint: claude
- *       model_hint: claude-opus-4-20250514
+ *       model_hint: claude-opus-4-8
  *       dependencies: []
  *       gates:
  *         - type: exists_any

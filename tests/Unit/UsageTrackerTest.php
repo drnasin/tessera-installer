@@ -23,7 +23,7 @@ final class UsageTrackerTest extends TestCase
     public function record_increments_count(): void
     {
         $tracker = new UsageTracker;
-        $tracker->record('claude', 'claude-opus-4-20250514');
+        $tracker->record('claude', 'claude-opus-4-8');
 
         $this->assertSame(1, $tracker->totalCalls());
     }
@@ -32,16 +32,16 @@ final class UsageTrackerTest extends TestCase
     public function record_multiple_tools_and_models(): void
     {
         $tracker = new UsageTracker;
-        $tracker->record('claude', 'claude-opus-4-20250514');
-        $tracker->record('claude', 'claude-opus-4-20250514');
-        $tracker->record('claude', 'claude-sonnet-4-20250514');
+        $tracker->record('claude', 'claude-opus-4-8');
+        $tracker->record('claude', 'claude-opus-4-8');
+        $tracker->record('claude', 'claude-sonnet-4-6');
         $tracker->record('gemini', 'gemini-2.0-flash');
 
         $this->assertSame(4, $tracker->totalCalls());
 
         $data = $tracker->toArray();
-        $this->assertSame(2, $data['claude']['claude-opus-4-20250514']);
-        $this->assertSame(1, $data['claude']['claude-sonnet-4-20250514']);
+        $this->assertSame(2, $data['claude']['claude-opus-4-8']);
+        $this->assertSame(1, $data['claude']['claude-sonnet-4-6']);
         $this->assertSame(1, $data['gemini']['gemini-2.0-flash']);
     }
 
@@ -59,8 +59,8 @@ final class UsageTrackerTest extends TestCase
     public function summary_formats_correctly(): void
     {
         $tracker = new UsageTracker;
-        $tracker->record('claude', 'claude-opus-4-20250514');
-        $tracker->record('claude', 'claude-sonnet-4-20250514');
+        $tracker->record('claude', 'claude-opus-4-8');
+        $tracker->record('claude', 'claude-sonnet-4-6');
         $tracker->record('gemini', 'gemini-2.0-flash');
 
         $summary = $tracker->summary();
@@ -72,7 +72,7 @@ final class UsageTrackerTest extends TestCase
     public function summary_shortens_model_names(): void
     {
         $tracker = new UsageTracker;
-        $tracker->record('claude', 'claude-opus-4-20250514');
+        $tracker->record('claude', 'claude-opus-4-8');
         $tracker->record('gemini', 'gemini-2.0-flash');
 
         $summary = $tracker->summary();

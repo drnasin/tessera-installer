@@ -96,7 +96,7 @@ final class PlanDiffTest extends TestCase
     public function detects_adapter_or_model_hint_change(): void
     {
         $before = $this->compile([
-            PlanStep::build('a', 'A', Complexity::SIMPLE, 'body', adapterHint: 'claude', modelHint: 'claude-haiku-4-5-20251001'),
+            PlanStep::build('a', 'A', Complexity::SIMPLE, 'body', adapterHint: 'claude', modelHint: 'claude-haiku-4-5'),
         ]);
         $after = $this->compile([
             PlanStep::build('a', 'A', Complexity::SIMPLE, 'body', adapterHint: 'gemini', modelHint: 'gemini-2.0-flash'),
