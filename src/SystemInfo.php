@@ -258,10 +258,47 @@ CONTEXT;
         foreach ($managers as $name => $argv) {
             $result = Console::execSilentArgv($argv, env: EnvPolicy::minimal());
             if ($result['exit'] === 0) {
-                $version = trim(Console::firstLine($result['output']));
-                $this->packageManagers[$name] = $version;
+                $this->packageManagers[$name] = self::normalizePackageManagerVersion($name, $result['output']);
             }
         }
+    }
+
+    /**
+     * Normalize possibly multi-line `--version` output into a single clean line.
+     *
+     * Some package managers (notably Scoop) print a header line such as
+     * "Current Scoop version:" before the actual version on a following line.
+     * Taking the first line verbatim therefore stores a useless header. This
+     * skips header-like lines (no digit, or ending with ':') and returns the
+     * first line that carries a version token. The manager name is prefixed
+     * only when the line does not already mention it, so:
+     *   scoop  "Current Scoop version:\n0.5.3"  => "scoop 0.5.3"
+     *   choco  "Chocolatey v2.3.0"              => "Chocolatey v2.3.0"
+     */
+    public static function normalizePackageManagerVersion(string $name, string $rawOutput): string
+    {
+        $lines = array_values(array_filter(
+            array_map('trim', preg_split('/\r\n|\r|\n/', $rawOutput) ?: []),
+            static fn (string $line): bool => $line !== '',
+        ));
+
+        $version = null;
+        foreach ($lines as $line) {
+            if (preg_match('/\d/', $line) === 1 && ! str_ends_with($line, ':')) {
+                $version = $line;
+                break;
+            }
+        }
+
+        // Fallback: no version token found — keep the first non-empty line so we
+        // never store an empty string for a detected manager.
+        $version ??= $lines[0] ?? '';
+
+        if ($version === '') {
+            return $name;
+        }
+
+        return stripos($version, $name) === false ? "{$name} {$version}" : $version;
     }
 
     private function detectInstalledTools(): void
