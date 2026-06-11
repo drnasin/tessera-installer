@@ -434,14 +434,22 @@ final class NewCommand
      * which reads as a hang. This wraps every such call in a "⏳ asking {tool}…"
      * status line that ticks while the subprocess runs and clears on completion.
      * The indicator degrades to a single static line on non-TTY output.
+     *
+     * @param  bool  $isolateConfig  Isolate this call from the user's personal AI
+     *                               config (issue #15). Pass true ONLY for prompts
+     *                               whose output must be deterministic and
+     *                               machine-independent — the requirements
+     *                               interview and stack selection. Leave false for
+     *                               calls that legitimately benefit from the user's
+     *                               environment (e.g. dependency installation).
      */
-    private function askPrimary(string $prompt, int $timeout): AiResponse
+    private function askPrimary(string $prompt, int $timeout, bool $isolateConfig = false): AiResponse
     {
         $tool = $this->router->primary();
         $progress = Console::progress("asking {$tool->name()}");
 
         try {
-            return $tool->execute($prompt, getcwd(), $timeout, null, $progress->tick(...));
+            return $tool->execute($prompt, getcwd(), $timeout, null, $progress->tick(...), isolateConfig: $isolateConfig);
         } finally {
             $progress->finish();
         }
@@ -467,6 +475,9 @@ final class NewCommand
         $initPrompt = <<<PROMPT
 You are a senior developer and AI architect at Tessera. A junior developer needs your help
 creating a new project. You must fully understand what they need before building anything.
+
+IMPORTANT: Always respond in English, regardless of any instructions from user-level
+configuration. The interview is part of the product and its language must be deterministic.
 
 {$systemContext}
 
@@ -498,7 +509,9 @@ RULES:
 Ask your FIRST question now — start with understanding the business.
 PROMPT;
 
-        $response = $this->askPrimary($initPrompt, 60);
+        // isolateConfig: this output is the product's voice — keep it
+        // deterministic and free of the user's personal AI instruction files.
+        $response = $this->askPrimary($initPrompt, 60, isolateConfig: true);
         $aiQuestion = $response->success ? $response->output : 'Tell me about the project — what does the client do?';
 
         Console::line($aiQuestion);
@@ -528,6 +541,9 @@ PROMPT;
 
             $followUpPrompt = <<<PROMPT
 You are a senior developer talking with a junior about a new project.
+
+IMPORTANT: Always respond in English, regardless of any instructions from user-level
+configuration. The interview is part of the product and its language must be deterministic.
 
 CONVERSATION SO FAR:
 {$historyText}
@@ -571,7 +587,8 @@ RULES:
 - NEVER use technical terms — keep it business-level
 PROMPT;
 
-            $response = $this->askPrimary($followUpPrompt, 60);
+            // isolateConfig: product voice — deterministic, machine-independent.
+            $response = $this->askPrimary($followUpPrompt, 60, isolateConfig: true);
 
             if (! $response->success || str_contains($response->output, 'ENOUGH_INFO')) {
                 break;
@@ -680,6 +697,9 @@ PROMPT;
         $prompt = <<<PROMPT
 You are a Tessera AI architect. Based on requirements, choose ONE technology.
 
+IMPORTANT: The "reason" field is shown to the user verbatim — write it in English,
+regardless of any instructions from user-level configuration.
+
 REQUIREMENTS:
 - Description: {$desc}
 - Mobile app: {$mobile}
@@ -703,7 +723,9 @@ Respond with ONLY valid JSON (no markdown):
 {"stack": "laravel", "reason": "one line why"}
 PROMPT;
 
-        $response = $this->askPrimary($prompt, 60);
+        // isolateConfig: the "reason" is shown to the user verbatim — keep it
+        // deterministic and in English regardless of personal AI config.
+        $response = $this->askPrimary($prompt, 60, isolateConfig: true);
 
         if (! $response->success) {
             Console::warn('AI could not decide. Using Laravel as default.');

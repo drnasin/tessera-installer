@@ -159,21 +159,16 @@ class AiTool
      * @param  (callable(int): void)|null  $onTick  Invoked from the read loop with the
      *                                               elapsed seconds; lets callers drive a
      *                                               live progress indicator. Must not throw.
+     * @param  bool  $isolateConfig  When true, add the tool's behavioral-config isolation
+     *                               flags (claude --safe-mode, codex --ignore-user-config) so
+     *                               the child does NOT load the user's personal instruction
+     *                               files. Caller-opt-in (issue #15): only the requirements
+     *                               interview requests this; build/review calls leave it false
+     *                               so the generated project's own config can shape the build.
      */
-    public function execute(string $prompt, string $workingDir, int $timeout = 600, ?string $model = null, ?callable $onTick = null): AiResponse
+    public function execute(string $prompt, string $workingDir, int $timeout = 600, ?string $model = null, ?callable $onTick = null, bool $isolateConfig = false): AiResponse
     {
-        $command = $this->config['execute'];
-
-        // Insert --model flag if specified (claude and gemini support this)
-        if ($model !== null && in_array($this->name, ['claude', 'gemini'], true)) {
-            // Insert after the binary name (position 1 for claude, position 1 for gemini)
-            array_splice($command, 1, 0, ['--model', $model]);
-        }
-
-        // For tools that don't support stdin, append prompt as argument
-        if (! $this->config['stdin']) {
-            $command[] = $prompt;
-        }
+        $command = $this->buildCommand($prompt, $model, $isolateConfig);
 
         $descriptors = [
             0 => ['pipe', 'r'],
@@ -268,6 +263,45 @@ class AiTool
             error: trim($error),
             exitCode: $exitCode,
         );
+    }
+
+    /**
+     * Build the argv command for a prompt execution.
+     *
+     * Order of flags is irrelevant to the CLIs; both --model and the
+     * behavioral-isolation flags are inserted right after the binary name. The
+     * prompt is appended only for tools that take it as an argument (no stdin).
+     *
+     * @return array<int, string>
+     *
+     * @internal Exposed for command-construction tests; not a public contract.
+     */
+    public function buildCommand(string $prompt, ?string $model = null, bool $isolateConfig = false): array
+    {
+        $command = $this->config['execute'];
+
+        // Behavioral-config isolation flags (issue #15) — added per the caller's
+        // request and only when isolation is enabled. Inserted right after the
+        // binary name, alongside --model.
+        if ($isolateConfig) {
+            $isolationArgs = AiConfigIsolation::argsFor($this->name);
+            if ($isolationArgs !== []) {
+                array_splice($command, 1, 0, $isolationArgs);
+            }
+        }
+
+        // Insert --model flag if specified (claude and gemini support this)
+        if ($model !== null && in_array($this->name, ['claude', 'gemini'], true)) {
+            // Insert after the binary name (position 1 for claude, position 1 for gemini)
+            array_splice($command, 1, 0, ['--model', $model]);
+        }
+
+        // For tools that don't support stdin, append prompt as argument
+        if (! $this->config['stdin']) {
+            $command[] = $prompt;
+        }
+
+        return $command;
     }
 
     private static function checkAvailable(string $command): ?string
