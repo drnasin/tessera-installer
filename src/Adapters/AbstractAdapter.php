@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tessera\Installer\Adapters;
 
 use Tessera\Installer\AiResponse;
+use Tessera\Installer\Console;
 use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Events\EventLog;
 use Tessera\Installer\Events\EventType;
@@ -31,6 +32,14 @@ abstract class AbstractAdapter implements AdapterInterface
     private ?string $cachedVersion = null;
 
     private ?bool $cachedAvailability = null;
+
+    /**
+     * Tracks which tool names have already emitted the SAFE_AI scope warning
+     * this process. Keyed by tool name so each tool warns at most once.
+     *
+     * @var array<string, true>
+     */
+    private static array $safeAiWarned = [];
 
     abstract public function name(): string;
 
@@ -96,6 +105,8 @@ abstract class AbstractAdapter implements AdapterInterface
             'step' => $context->stepName,
         ], $context->traceId);
 
+        $this->warnIfSafeAiScopeGap();
+
         // Per-provider isolation: this child sees ONLY its own provider's
         // credentials. Cross-provider keys and unrelated secrets (GITHUB_TOKEN,
         // CI tokens) are filtered out by the EnvPolicy allowlist.
@@ -108,6 +119,54 @@ abstract class AbstractAdapter implements AdapterInterface
         $this->emitCompletion($context->eventLog, $context, $response, $durationMs);
 
         return $response;
+    }
+
+    /**
+     * Emit a one-time warning when TESSERA_SAFE_AI=1 but the selected tool is
+     * not Claude. The flag today controls only Claude's --dangerously-skip-permissions;
+     * Codex and Gemini approval mode is governed entirely by their own CLIs.
+     *
+     * The warning fires at most once per tool name per process so a multi-step
+     * build produces exactly one notice rather than one per step.
+     *
+     * @internal Exposed for unit tests; not part of AdapterInterface.
+     */
+    public function warnIfSafeAiScopeGap(): void
+    {
+        $name = $this->name();
+
+        if ($name === 'claude') {
+            return;
+        }
+
+        $val = getenv('TESSERA_SAFE_AI');
+        $safeAiEnabled = $val !== false && $val !== '' && $val !== '0';
+
+        if (! $safeAiEnabled) {
+            return;
+        }
+
+        if (isset(self::$safeAiWarned[$name])) {
+            return;
+        }
+
+        self::$safeAiWarned[$name] = true;
+
+        Console::warn(
+            "TESSERA_SAFE_AI is set but has no effect on {$name}. ".
+            "Approval mode for {$name} is governed by the tool's own defaults, not by Tessera. ".
+            'See the "AI permission mode" section in README.md.',
+        );
+    }
+
+    /**
+     * Reset the per-process warning state. For testing only.
+     *
+     * @internal
+     */
+    public static function resetSafeAiWarnedForTesting(): void
+    {
+        self::$safeAiWarned = [];
     }
 
     /**
