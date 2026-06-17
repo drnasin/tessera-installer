@@ -8,6 +8,7 @@ use Tessera\Installer\AiResponse;
 use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Events\EventLog;
 use Tessera\Installer\Events\EventType;
+use Tessera\Installer\WindowsCommandResolver;
 
 /**
  * Shared subprocess execution for AI CLI adapters.
@@ -309,140 +310,10 @@ abstract class AbstractAdapter implements AdapterInterface
      */
     private static function prepareCommand(array $argv, ?string $cwd): array
     {
-        if (PHP_OS_FAMILY !== 'Windows' || $argv === []) {
-            return $argv;
-        }
+        /** @var list<string> $prepared */
+        $prepared = WindowsCommandResolver::prepare($argv, $cwd);
 
-        $resolved = self::resolveWindowsBinary($argv[0], $cwd ?? (getcwd() ?: '.'));
-        if ($resolved !== null) {
-            $argv[0] = $resolved;
-        }
-
-        $extension = strtolower(pathinfo($argv[0], PATHINFO_EXTENSION));
-        if (! in_array($extension, ['bat', 'cmd'], true)) {
-            return $argv;
-        }
-
-        return array_merge(
-            [self::windowsCommandProcessor(), '/D', '/S', '/C'],
-            $argv,
-        );
-    }
-
-    private static function windowsCommandProcessor(): string
-    {
-        $comspec = getenv('COMSPEC');
-
-        return is_string($comspec) && $comspec !== '' ? $comspec : 'cmd.exe';
-    }
-
-    private static function resolveWindowsBinary(string $binary, string $cwd): ?string
-    {
-        $extensions = self::windowsExecutableExtensions();
-
-        foreach (self::candidateBinaryPaths($binary, $cwd, $extensions) as $candidate) {
-            if (is_file($candidate)) {
-                return $candidate;
-            }
-        }
-
-        return null;
-    }
-
-    private static function looksLikePath(string $binary): bool
-    {
-        return str_contains($binary, '\\')
-            || str_contains($binary, '/')
-            || preg_match('/^[A-Za-z]:/', $binary) === 1
-            || str_starts_with($binary, '.');
-    }
-
-    private static function normalizeCandidatePath(string $binary, string $cwd): string
-    {
-        if (preg_match('/^[A-Za-z]:/', $binary) === 1 || str_starts_with($binary, '\\\\')) {
-            return $binary;
-        }
-
-        return rtrim($cwd, '\\/').DIRECTORY_SEPARATOR.$binary;
-    }
-
-    /**
-     * @param  list<string>  $extensions
-     * @return list<string>
-     */
-    private static function candidateBinaryPaths(string $binary, string $cwd, array $extensions): array
-    {
-        if (self::looksLikePath($binary)) {
-            $base = self::normalizeCandidatePath($binary, $cwd);
-
-            return self::expandWindowsBinaryCandidates($base, $extensions);
-        }
-
-        $path = getenv('PATH');
-        if (! is_string($path) || $path === '') {
-            return [];
-        }
-
-        $candidates = [];
-
-        foreach (explode(PATH_SEPARATOR, $path) as $dir) {
-            if ($dir === '') {
-                continue;
-            }
-
-            $base = rtrim($dir, '\\/').DIRECTORY_SEPARATOR.$binary;
-            foreach (self::expandWindowsBinaryCandidates($base, $extensions) as $candidate) {
-                $candidates[] = $candidate;
-            }
-        }
-
-        return $candidates;
-    }
-
-    /**
-     * @param  list<string>  $extensions
-     * @return list<string>
-     */
-    private static function expandWindowsBinaryCandidates(string $base, array $extensions): array
-    {
-        if (pathinfo($base, PATHINFO_EXTENSION) !== '') {
-            return [$base];
-        }
-
-        $candidates = [];
-
-        foreach ($extensions as $extension) {
-            $candidates[] = $base.$extension;
-        }
-
-        $candidates[] = $base;
-
-        return $candidates;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private static function windowsExecutableExtensions(): array
-    {
-        $pathext = getenv('PATHEXT');
-
-        if (! is_string($pathext) || $pathext === '') {
-            return ['.com', '.exe', '.bat', '.cmd'];
-        }
-
-        $extensions = [];
-
-        foreach (explode(';', $pathext) as $extension) {
-            $extension = strtolower(trim($extension));
-            if ($extension === '') {
-                continue;
-            }
-
-            $extensions[] = str_starts_with($extension, '.') ? $extension : '.'.$extension;
-        }
-
-        return $extensions === [] ? ['.com', '.exe', '.bat', '.cmd'] : $extensions;
+        return $prepared;
     }
 
     private function emitCompletion(?EventLog $log, AdapterContext $context, AiResponse $response, int $durationMs): void
