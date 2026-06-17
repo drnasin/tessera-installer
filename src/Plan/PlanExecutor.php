@@ -9,6 +9,7 @@ use Tessera\Installer\Adapters\AdapterRegistry;
 use Tessera\Installer\Events\EventLog;
 use Tessera\Installer\Events\EventType;
 use Tessera\Installer\Memory;
+use Tessera\Installer\SecretRedactor;
 use Tessera\Installer\ToolRouter;
 
 /**
@@ -226,7 +227,7 @@ final class PlanExecutor
             $response = $adapter->execute($rendered, $adapterContext);
         } catch (\Throwable $e) {
             $duration = (int) round((microtime(true) - $startedAt) * 1000);
-            $errorMessage = 'Adapter crashed: '.$e->getMessage();
+            $errorMessage = 'Adapter crashed: '.SecretRedactor::redact($e->getMessage());
 
             $this->memory?->failStep($step->id, $errorMessage);
 
@@ -320,7 +321,7 @@ final class PlanExecutor
         if (! $response->success || $hardFailure !== null) {
             $errorMessage = $hardFailure !== null
                 ? "Gate '{$hardFailure->gateType}' failed: {$hardFailure->message}"
-                : ($response->error !== '' ? $response->error : 'Adapter returned non-zero exit.');
+                : ($response->error !== '' ? SecretRedactor::redact($response->error) : 'Adapter returned non-zero exit.');
 
             $this->memory?->failStep($step->id, $errorMessage);
 

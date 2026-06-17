@@ -11,6 +11,7 @@ use Tessera\Installer\DatabaseIdentifier;
 use Tessera\Installer\EnvFile;
 use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Memory;
+use Tessera\Installer\SecretRedactor;
 use Tessera\Installer\StepRunner;
 use Tessera\Installer\SystemInfo;
 use Tessera\Installer\ToolRouter;
@@ -593,7 +594,6 @@ PROMPT,
         return implode(', ', $versions);
     }
 
-
     /**
      * Create the TranslatableFields helper class in the scaffolded project.
      *
@@ -1127,7 +1127,7 @@ HELPER);
         }
 
         $cli = $db === 'mariadb' ? 'mariadb' : ($isPostgres ? 'psql' : 'mysql');
-        $runner = new CommandRunner();
+        $runner = new CommandRunner;
 
         // 1) Test connection.
         $testResult = $isPostgres
@@ -1358,10 +1358,12 @@ HELPER);
 
             // Truncate output to last 2000 chars (excerpt for prompt + post-mortem).
             // Guard against an empty capture so the persisted excerpt is never a
-            // bare label with no diagnostic value.
+            // bare label with no diagnostic value. Redact before persisting or
+            // embedding in AI prompts.
             $excerpt = trim($output) !== ''
                 ? (strlen($output) > 2000 ? '...'.substr($output, -2000) : $output)
                 : '(no test output captured; exit code '.$result['exit'].')';
+            $excerpt = SecretRedactor::redact($excerpt);
 
             if ($attempt >= $maxAttempts) {
                 Console::warn('  Tests still failing after all attempts — project is functional, tests need manual review.');
