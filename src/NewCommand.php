@@ -142,7 +142,7 @@ final class NewCommand
 
         Console::success("Using requirements fixture: {$path}");
 
-        return $decoded;
+        return $this->normalizeRequirements($decoded);
     }
 
     private function showBanner(): void
@@ -1027,21 +1027,51 @@ PROMPT;
             return null;
         }
 
+        return array_merge($this->normalizeRequirements($json), ['conversation' => $conversation]);
+    }
+
+    /**
+     * Normalize a raw requirements array to the canonical shape.
+     *
+     * Applies defaults for every key, casts booleans, and coerces
+     * `languages` / `payment_providers` to arrays so the fixture path
+     * and the interactive AI path produce the same contract.
+     *
+     * @param  array<string, mixed>  $raw
+     * @return array<string, mixed>
+     */
+    private function normalizeRequirements(array $raw): array
+    {
+        $languages = $raw['languages'] ?? ['hr'];
+        if (is_string($languages)) {
+            $languages = array_values(array_filter(array_map('trim', explode(',', $languages))));
+        }
+        if (! is_array($languages) || $languages === []) {
+            $languages = ['hr'];
+        }
+
+        $paymentProviders = $raw['payment_providers'] ?? [];
+        if (is_string($paymentProviders)) {
+            $paymentProviders = array_values(array_filter(array_map('trim', explode(',', $paymentProviders))));
+        }
+        if (! is_array($paymentProviders)) {
+            $paymentProviders = [];
+        }
+
         return [
-            'description' => $json['description'] ?? 'Web project',
-            'country' => $json['country'] ?? '',
-            'languages' => $json['languages'] ?? ['hr'],
-            'needs_shop' => (bool) ($json['needs_shop'] ?? false),
-            'needs_mobile' => (bool) ($json['needs_mobile'] ?? false),
-            'needs_realtime' => (bool) ($json['needs_realtime'] ?? false),
-            'needs_frontend' => (bool) ($json['needs_frontend'] ?? true),
-            'design_style' => $json['design_style'] ?? 'modern, clean',
-            'design_colors' => $json['design_colors'] ?? '',
-            'payment_providers' => $json['payment_providers'] ?? [],
-            'database' => $json['database'] ?? 'sqlite',
-            'expected_users' => $json['expected_users'] ?? 'low',
-            'special' => $json['special'] ?? '',
-            'conversation' => $conversation,
+            'description' => is_string($raw['description'] ?? null) ? $raw['description'] : 'Web project',
+            'country' => is_string($raw['country'] ?? null) ? $raw['country'] : '',
+            'languages' => $languages,
+            'needs_shop' => (bool) ($raw['needs_shop'] ?? false),
+            'needs_mobile' => (bool) ($raw['needs_mobile'] ?? false),
+            'needs_realtime' => (bool) ($raw['needs_realtime'] ?? false),
+            'needs_frontend' => (bool) ($raw['needs_frontend'] ?? true),
+            'design_style' => is_string($raw['design_style'] ?? null) ? $raw['design_style'] : 'modern, clean',
+            'design_colors' => is_string($raw['design_colors'] ?? null) ? $raw['design_colors'] : '',
+            'payment_providers' => $paymentProviders,
+            'database' => is_string($raw['database'] ?? null) ? $raw['database'] : 'sqlite',
+            'expected_users' => is_string($raw['expected_users'] ?? null) ? $raw['expected_users'] : 'low',
+            'special' => is_string($raw['special'] ?? null) ? $raw['special'] : '',
         ];
     }
 
