@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tessera\Installer;
 
 use Tessera\Installer\Cli\ProjectDirectoryName;
+use Tessera\Installer\Plan\PromptRenderer;
 use Tessera\Installer\Stacks\StackInterface;
 use Tessera\Installer\Stacks\StackRegistry;
 
@@ -569,56 +570,9 @@ PROMPT;
                 break;
             }
 
-            $historyText = $this->formatConversation($conversation);
             $roundNum = $i + 1;
 
-            $followUpPrompt = <<<PROMPT
-You are a senior developer talking with a junior about a new project.
-
-IMPORTANT: Always respond in English, regardless of any instructions from user-level
-configuration. The interview is part of the product and its language must be deterministic.
-
-CONVERSATION SO FAR:
-{$historyText}
-
-THINK STEP BY STEP — what do you still need to know to build this project?
-
-MANDATORY CHECKLIST (mark each as COVERED or NOT COVERED):
-1. BUSINESS — what the client does, main goal of the site [covered?]
-2. LANGUAGES — which languages the site/app needs [covered?]
-3. PAYMENTS — if ANY of these signals appeared: products, shop, selling, booking,
-   tickets, reservations with payment, subscriptions, pricing → you MUST ask about payments.
-   Country matters for payment providers:
-   - Croatia/Slovenia/Serbia: CorvusPay, WSPay, or Stripe
-   - Austria/Germany/Switzerland: Klarna, Mollie, Stripe, PayPal
-   - UK: Stripe, GoCardless, PayPal
-   - USA: Stripe, Square, PayPal
-   - Other: ask about local providers or suggest Stripe as default
-   [covered? or not applicable?]
-4. FRONTEND — design preferences: style, colors, mood [covered?]
-5. SCALE — expected size: products, pages, daily visitors [covered?]
-
-ALSO THINK ABOUT (ask if relevant to this project):
-- User accounts? (login, registration, profiles)
-- Media uploads? (gallery, portfolio, product photos)
-- Contact forms? Email notifications?
-- Blog or news section?
-- Social media integration?
-- Multilingual content (not just UI — actual content in multiple languages)?
-- Any integrations? (Google Maps, calendar, external APIs)
-
-CURRENT ROUND: {$roundNum} of {$maxRounds}
-
-RULES:
-- If ALL 5 mandatory topics are covered (or confirmed not applicable) → respond EXACTLY: ENOUGH_INFO
-- If any mandatory topic is NOT yet covered → ask about it (ONE question, short and friendly)
-- You MUST ask about uncovered mandatory topics before saying ENOUGH_INFO
-- Do NOT say ENOUGH_INFO before round {$minRounds}
-- If the project clearly involves selling/payments but no provider was discussed → you MUST ask
-- If you notice something the junior might not have thought of, mention it briefly:
-  "By the way, should the site also have a blog section?" — this is what a senior dev does
-- NEVER use technical terms — keep it business-level
-PROMPT;
+            $followUpPrompt = $this->buildFollowUpPrompt($conversation, $roundNum, $maxRounds, $minRounds);
 
             // isolateConfig: product voice — deterministic, machine-independent.
             $response = $this->askPrimary($followUpPrompt, 60, isolateConfig: true);
@@ -636,7 +590,7 @@ PROMPT;
         Console::line();
 
         // Extract structured requirements via JSON
-        $historyText = $this->formatConversation($conversation);
+        $historyText = PromptRenderer::wrapUserData('conversation', $this->formatConversation($conversation));
         $availableDbs = implode(', ', array_keys($this->system->databases())) ?: 'sqlite';
 
         $extractPrompt = <<<PROMPT
@@ -718,14 +672,14 @@ PROMPT;
     private function decideStack(array $requirements): ?StackInterface
     {
         $stackContext = StackRegistry::buildAiContext();
-        $desc = $requirements['description'] ?? '';
+        $desc = PromptRenderer::wrapUserData('description', $requirements['description'] ?? '');
         $mobile = ($requirements['needs_mobile'] ?? false) ? 'YES' : 'NO';
         $realtime = ($requirements['needs_realtime'] ?? false) ? 'YES' : 'NO';
-        $users = $requirements['expected_users'] ?? 'low';
+        $users = PromptRenderer::wrapUserData('expected_users', $requirements['expected_users'] ?? 'low');
         $shop = ($requirements['needs_shop'] ?? false) ? 'YES' : 'NO';
         $paymentProviders = $requirements['payment_providers'] ?? [];
-        $payments = ! empty($paymentProviders) ? implode(', ', $paymentProviders) : 'none';
-        $special = $requirements['special'] ?? '';
+        $payments = PromptRenderer::wrapUserData('payment_providers', ! empty($paymentProviders) ? implode(', ', $paymentProviders) : 'none');
+        $special = PromptRenderer::wrapUserData('special', $requirements['special'] ?? '');
 
         $prompt = <<<PROMPT
 You are a Tessera AI architect. Based on requirements, choose ONE technology.
@@ -913,7 +867,7 @@ PROMPT;
      * ~/.tessera/config.json so later runs skip the questions entirely.
      *
      * @param  array<string, AiTool>|null  $detectedTools  Injectable for tests;
-     *                                                      null = detect from the system.
+     *                                                     null = detect from the system.
      */
     private function resolveToolPreference(?array $detectedTools = null): ToolPreference
     {
@@ -1012,6 +966,69 @@ PROMPT;
             fn (array $entry): string => ($entry['role'] === 'junior' ? 'JUNIOR' : 'AI').': '.$entry['text'],
             $conversation,
         ));
+    }
+
+    /**
+     * Build the follow-up interview prompt for a given conversation state.
+     *
+     * Extracted so tests can assert that untrusted conversation content is
+     * wrapped in USER_DATA delimiters before being embedded in the prompt.
+     *
+     * @internal
+     *
+     * @param  array<int, array{role: string, text: string}>  $conversation
+     */
+    private function buildFollowUpPrompt(array $conversation, int $roundNum, int $maxRounds, int $minRounds): string
+    {
+        $historyText = PromptRenderer::wrapUserData('conversation', $this->formatConversation($conversation));
+
+        return <<<PROMPT
+You are a senior developer talking with a junior about a new project.
+
+IMPORTANT: Always respond in English, regardless of any instructions from user-level
+configuration. The interview is part of the product and its language must be deterministic.
+
+CONVERSATION SO FAR:
+{$historyText}
+
+THINK STEP BY STEP — what do you still need to know to build this project?
+
+MANDATORY CHECKLIST (mark each as COVERED or NOT COVERED):
+1. BUSINESS — what the client does, main goal of the site [covered?]
+2. LANGUAGES — which languages the site/app needs [covered?]
+3. PAYMENTS — if ANY of these signals appeared: products, shop, selling, booking,
+   tickets, reservations with payment, subscriptions, pricing → you MUST ask about payments.
+   Country matters for payment providers:
+   - Croatia/Slovenia/Serbia: CorvusPay, WSPay, or Stripe
+   - Austria/Germany/Switzerland: Klarna, Mollie, Stripe, PayPal
+   - UK: Stripe, GoCardless, PayPal
+   - USA: Stripe, Square, PayPal
+   - Other: ask about local providers or suggest Stripe as default
+   [covered? or not applicable?]
+4. FRONTEND — design preferences: style, colors, mood [covered?]
+5. SCALE — expected size: products, pages, daily visitors [covered?]
+
+ALSO THINK ABOUT (ask if relevant to this project):
+- User accounts? (login, registration, profiles)
+- Media uploads? (gallery, portfolio, product photos)
+- Contact forms? Email notifications?
+- Blog or news section?
+- Social media integration?
+- Multilingual content (not just UI — actual content in multiple languages)?
+- Any integrations? (Google Maps, calendar, external APIs)
+
+CURRENT ROUND: {$roundNum} of {$maxRounds}
+
+RULES:
+- If ALL 5 mandatory topics are covered (or confirmed not applicable) → respond EXACTLY: ENOUGH_INFO
+- If any mandatory topic is NOT yet covered → ask about it (ONE question, short and friendly)
+- You MUST ask about uncovered mandatory topics before saying ENOUGH_INFO
+- Do NOT say ENOUGH_INFO before round {$minRounds}
+- If the project clearly involves selling/payments but no provider was discussed → you MUST ask
+- If you notice something the junior might not have thought of, mention it briefly:
+  "By the way, should the site also have a blog section?" — this is what a senior dev does
+- NEVER use technical terms — keep it business-level
+PROMPT;
     }
 
     /**
@@ -1120,25 +1137,30 @@ PROMPT;
             if ($inString) {
                 if ($escaped) {
                     $escaped = false;
+
                     continue;
                 }
                 if ($char === '\\') {
                     $escaped = true;
+
                     continue;
                 }
                 if ($char === '"') {
                     $inString = false;
                 }
+
                 continue;
             }
 
             if ($char === '"') {
                 $inString = true;
+
                 continue;
             }
 
             if ($char === '{') {
                 $depth++;
+
                 continue;
             }
 

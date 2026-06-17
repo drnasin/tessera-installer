@@ -57,7 +57,7 @@ final class PromptRenderer
 
         return (string) preg_replace_callback(
             self::PLACEHOLDER_PATTERN,
-            function (array $match) use ($vars, $template): string {
+            function (array $match) use ($vars): string {
                 $name = $match[1];
 
                 if (! array_key_exists($name, $vars)) {
@@ -112,8 +112,24 @@ final class PromptRenderer
         return (string) $value;
     }
 
-    private function wrap(string $name, string $value): string
+    /**
+     * Wrap an untrusted string in USER_DATA delimiters.
+     *
+     * Public so callers that build prompts outside of PromptRenderer (e.g. the
+     * legacy interview path in NewCommand) can reuse the same delimiter format
+     * without duplicating the constants.
+     *
+     * @internal — delimiter format is an implementation detail; do not depend on
+     *             the exact string outside of tests that specifically assert on
+     *             prompt-injection mitigation.
+     */
+    public static function wrapUserData(string $name, string $value): string
     {
         return sprintf(self::USER_DATA_OPEN, $name)."\n".$value."\n".self::USER_DATA_CLOSE;
+    }
+
+    private function wrap(string $name, string $value): string
+    {
+        return self::wrapUserData($name, $value);
     }
 }
