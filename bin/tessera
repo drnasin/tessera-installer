@@ -305,13 +305,12 @@ function showTools(): void
 function installerVersion(): string
 {
     // Try git tag first (works in dev and when installed from source)
-    $installerDir = str_replace('\\', '/', dirname(__DIR__));
-    $result = [];
-    $exit = 1;
-    exec('git -C "' . $installerDir . '" describe --tags --abbrev=0 2>&1', $result, $exit);
+    $installerDir = dirname(__DIR__);
+    $runner = new \Tessera\Installer\CommandRunner();
+    $res = $runner->run(['git', 'describe', '--tags', '--abbrev=0'], $installerDir, \Tessera\Installer\EnvPolicy::minimal(), null, 5);
 
-    if ($exit === 0 && ! empty($result[0])) {
-        return trim($result[0]);
+    if ($res->exitCode === 0 && trim($res->stdout) !== '') {
+        return trim($res->stdout);
     }
 
     // Fallback: check composer installed.json (global install via composer)
