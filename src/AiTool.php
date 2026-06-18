@@ -16,11 +16,12 @@ class AiTool
      * deliberate choice over a class const; the marginal cost of rebuilding a small array
      * on each detect*() call is negligible compared to the flexibility it provides.
      *
-     * TESSERA_SAFE_AI today affects ONLY Claude. Codex and Gemini have their own
-     * permission models (codex exec's sandbox, Gemini's default approval flow)
-     * which Tessera does not currently configure. Extending SAFE_AI coverage to
-     * those CLIs is a planned improvement — see the AI Permission Mode section
-     * of README.md.
+     * TESSERA_SAFE_AI today affects ONLY Claude (strips --dangerously-skip-permissions).
+     * Codex and Gemini have their own permission models — Codex runs inside its own
+     * sandbox, Gemini's approval flow depends on the version installed — which Tessera
+     * does not currently configure. Setting TESSERA_SAFE_AI=1 does NOT enable per-action
+     * approval for Codex or Gemini; their behaviour comes from their own CLI defaults.
+     * See the "AI permission mode" section of README.md for the full per-tool breakdown.
      *
      * @return array<string, array{binary: string, detect: string, execute: array<int, string>, stdin: bool}>
      */
