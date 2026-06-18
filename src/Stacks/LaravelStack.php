@@ -593,7 +593,6 @@ PROMPT,
         return implode(', ', $versions);
     }
 
-
     /**
      * Create the TranslatableFields helper class in the scaffolded project.
      *
@@ -1068,6 +1067,10 @@ HELPER);
 
         file_put_contents($envFile, $env);
 
+        if (PHP_OS_FAMILY !== 'Windows') {
+            @chmod($envFile, 0600);
+        }
+
         return $db;
     }
 
@@ -1127,7 +1130,7 @@ HELPER);
         }
 
         $cli = $db === 'mariadb' ? 'mariadb' : ($isPostgres ? 'psql' : 'mysql');
-        $runner = new CommandRunner();
+        $runner = new CommandRunner;
 
         // 1) Test connection.
         $testResult = $isPostgres
