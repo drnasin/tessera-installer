@@ -7,6 +7,60 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.13.0] – 2026-06-18
+
+### Fixed
+
+- **Windows: AI CLIs installed as npm `.cmd` shims now launch.** `AiTool::execute()`
+  spawned the AI CLI with array argv, and `proc_open()` array spawning on Windows
+  uses `CreateProcess`, which only appends `.exe` and ignores `PATHEXT` — so a bare
+  `claude`/`gemini`/`codex` (shipped by npm as `.cmd` with no `.exe`) failed to
+  start and `tessera new` died on its very first AI call. Detection had masked it:
+  the `--version` probe uses the string/shell form, which resolves the shim, so
+  `doctor` and CI stayed green while the real build path was broken. The launch
+  path now resolves the real `.cmd`/`.bat`/`.exe` (wrapping batch shims with
+  `cmd.exe`) before spawning. A regression test drives the real array-argv spawn
+  against a fake PATH shim on Windows/macOS/Ubuntu — verified red without the fix.
+  (#48, #49)
+
+### Changed
+
+- **Windows command resolution de-duplicated into `WindowsCommandResolver`.** The
+  binary-resolution logic previously copied verbatim in `CommandRunner` and
+  `AbstractAdapter` now lives in one class that all three subprocess paths
+  (including `AiTool`) delegate to. (#50)
+- **`installerVersion()` no longer shells out via a string.** The `git describe`
+  call now runs through array-argv `CommandRunner` with `EnvPolicy::minimal()`
+  instead of `exec('git -C "..." ...')`, removing the last string-interpolated
+  shell command in the codebase. (#55)
+- **`--requirements-fixture` JSON is normalized to the canonical shape.** The
+  fixture path now runs through the same `normalizeRequirements()` helper as the
+  interactive interview (type coercion + defaults), so both intake paths produce
+  an identical contract instead of the fixture being passed through verbatim. (#56)
+
+### Security
+
+- **Prompt-injection mitigation extended to the interview path.** Untrusted input
+  interpolated into the requirements-interview and stack-decision prompts in
+  `NewCommand` is now wrapped in the same `USER_DATA` delimiters used by
+  `PromptRenderer`, closing the asymmetry where only the YAML/adapter path was
+  protected. (#51)
+- **Credentials redacted from persisted subprocess output.** A new
+  `SecretRedactor` scrubs credential-shaped substrings (provider API-key env
+  assignments, `sk-`/`gh*_` tokens, `Bearer` headers, basic-auth in URLs,
+  `PGPASSWORD`/`MYSQL_PWD`) from subprocess stderr before it is written to
+  `.tessera/events.jsonl` / `state.json` or embedded in AI prompts. (#53)
+- **Generated `.env` restricted to owner-only on POSIX.** After writing the
+  project `.env` (which can contain `DB_PASSWORD`), the installer `chmod`s it to
+  `0600` on non-Windows hosts. (#54)
+
+### Added
+
+- **`TESSERA_SAFE_AI` scope made explicit.** The flag governs only Claude today;
+  the installer now emits a one-time warning when it is set while a non-Claude
+  tool (Codex/Gemini) is in use, and the README documents the per-tool permission
+  model in an "AI permission mode" table. (#52)
+
 ## [3.12.0] – 2026-06-11
 
 ### Added
