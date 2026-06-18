@@ -157,8 +157,8 @@ class AiTool
      * Execute a prompt and return the output.
      *
      * @param  (callable(int): void)|null  $onTick  Invoked from the read loop with the
-     *                                               elapsed seconds; lets callers drive a
-     *                                               live progress indicator. Must not throw.
+     *                                              elapsed seconds; lets callers drive a
+     *                                              live progress indicator. Must not throw.
      * @param  bool  $isolateConfig  When true, add the tool's behavioral-config isolation
      *                               flags (claude --safe-mode, codex --ignore-user-config) so
      *                               the child does NOT load the user's personal instruction
@@ -169,6 +169,13 @@ class AiTool
     public function execute(string $prompt, string $workingDir, int $timeout = 600, ?string $model = null, ?callable $onTick = null, bool $isolateConfig = false): AiResponse
     {
         $command = $this->buildCommand($prompt, $model, $isolateConfig);
+
+        // Resolve the binary for a shell-free array spawn. On Windows this maps
+        // a bare `claude`/`gemini`/`codex` to its real npm `.cmd` shim (and wraps
+        // it with cmd.exe), because proc_open() array argv uses CreateProcess,
+        // which only appends `.exe` and ignores PATHEXT (issue #48). No-op on
+        // POSIX. checkAvailable() deliberately stays on its string form.
+        $command = WindowsCommandResolver::prepare($command, $workingDir);
 
         $descriptors = [
             0 => ['pipe', 'r'],
