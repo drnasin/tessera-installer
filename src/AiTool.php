@@ -16,11 +16,12 @@ class AiTool
      * deliberate choice over a class const; the marginal cost of rebuilding a small array
      * on each detect*() call is negligible compared to the flexibility it provides.
      *
-     * TESSERA_SAFE_AI today affects ONLY Claude. Codex and Gemini have their own
-     * permission models (codex exec's sandbox, Gemini's default approval flow)
-     * which Tessera does not currently configure. Extending SAFE_AI coverage to
-     * those CLIs is a planned improvement — see the AI Permission Mode section
-     * of README.md.
+     * TESSERA_SAFE_AI today affects ONLY Claude (strips --dangerously-skip-permissions).
+     * Codex and Gemini have their own permission models — Codex runs inside its own
+     * sandbox, Gemini's approval flow depends on the version installed — which Tessera
+     * does not currently configure. Setting TESSERA_SAFE_AI=1 does NOT enable per-action
+     * approval for Codex or Gemini; their behaviour comes from their own CLI defaults.
+     * See the "AI permission mode" section of README.md for the full per-tool breakdown.
      *
      * @return array<string, array{binary: string, detect: string, execute: array<int, string>, stdin: bool}>
      */
@@ -157,8 +158,8 @@ class AiTool
      * Execute a prompt and return the output.
      *
      * @param  (callable(int): void)|null  $onTick  Invoked from the read loop with the
-     *                                               elapsed seconds; lets callers drive a
-     *                                               live progress indicator. Must not throw.
+     *                                              elapsed seconds; lets callers drive a
+     *                                              live progress indicator. Must not throw.
      * @param  bool  $isolateConfig  When true, add the tool's behavioral-config isolation
      *                               flags (claude --safe-mode, codex --ignore-user-config) so
      *                               the child does NOT load the user's personal instruction
@@ -169,6 +170,13 @@ class AiTool
     public function execute(string $prompt, string $workingDir, int $timeout = 600, ?string $model = null, ?callable $onTick = null, bool $isolateConfig = false): AiResponse
     {
         $command = $this->buildCommand($prompt, $model, $isolateConfig);
+
+        // Resolve the binary for a shell-free array spawn. On Windows this maps
+        // a bare `claude`/`gemini`/`codex` to its real npm `.cmd` shim (and wraps
+        // it with cmd.exe), because proc_open() array argv uses CreateProcess,
+        // which only appends `.exe` and ignores PATHEXT (issue #48). No-op on
+        // POSIX. checkAvailable() deliberately stays on its string form.
+        $command = WindowsCommandResolver::prepare($command, $workingDir);
 
         $descriptors = [
             0 => ['pipe', 'r'],

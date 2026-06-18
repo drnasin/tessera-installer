@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Tessera\Installer\Adapters;
 
 use Tessera\Installer\AiResponse;
+use Tessera\Installer\Console;
 use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Events\EventLog;
 use Tessera\Installer\Events\EventType;
 use Tessera\Installer\SecretRedactor;
+use Tessera\Installer\WindowsCommandResolver;
 
 /**
  * Shared subprocess execution for AI CLI adapters.
@@ -32,6 +34,14 @@ abstract class AbstractAdapter implements AdapterInterface
     private ?string $cachedVersion = null;
 
     private ?bool $cachedAvailability = null;
+
+    /**
+     * Tracks which tool names have already emitted the SAFE_AI scope warning
+     * this process. Keyed by tool name so each tool warns at most once.
+     *
+     * @var array<string, true>
+     */
+    private static array $safeAiWarned = [];
 
     abstract public function name(): string;
 
@@ -97,6 +107,8 @@ abstract class AbstractAdapter implements AdapterInterface
             'step' => $context->stepName,
         ], $context->traceId);
 
+        $this->warnIfSafeAiScopeGap();
+
         // Per-provider isolation: this child sees ONLY its own provider's
         // credentials. Cross-provider keys and unrelated secrets (GITHUB_TOKEN,
         // CI tokens) are filtered out by the EnvPolicy allowlist.
@@ -109,6 +121,54 @@ abstract class AbstractAdapter implements AdapterInterface
         $this->emitCompletion($context->eventLog, $context, $response, $durationMs);
 
         return $response;
+    }
+
+    /**
+     * Emit a one-time warning when TESSERA_SAFE_AI=1 but the selected tool is
+     * not Claude. The flag today controls only Claude's --dangerously-skip-permissions;
+     * Codex and Gemini approval mode is governed entirely by their own CLIs.
+     *
+     * The warning fires at most once per tool name per process so a multi-step
+     * build produces exactly one notice rather than one per step.
+     *
+     * @internal Exposed for unit tests; not part of AdapterInterface.
+     */
+    public function warnIfSafeAiScopeGap(): void
+    {
+        $name = $this->name();
+
+        if ($name === 'claude') {
+            return;
+        }
+
+        $val = getenv('TESSERA_SAFE_AI');
+        $safeAiEnabled = $val !== false && $val !== '' && $val !== '0';
+
+        if (! $safeAiEnabled) {
+            return;
+        }
+
+        if (isset(self::$safeAiWarned[$name])) {
+            return;
+        }
+
+        self::$safeAiWarned[$name] = true;
+
+        Console::warn(
+            "TESSERA_SAFE_AI is set but has no effect on {$name}. ".
+            "Approval mode for {$name} is governed by the tool's own defaults, not by Tessera. ".
+            'See the "AI permission mode" section in README.md.',
+        );
+    }
+
+    /**
+     * Reset the per-process warning state. For testing only.
+     *
+     * @internal
+     */
+    public static function resetSafeAiWarnedForTesting(): void
+    {
+        self::$safeAiWarned = [];
     }
 
     /**
@@ -310,140 +370,10 @@ abstract class AbstractAdapter implements AdapterInterface
      */
     private static function prepareCommand(array $argv, ?string $cwd): array
     {
-        if (PHP_OS_FAMILY !== 'Windows' || $argv === []) {
-            return $argv;
-        }
+        /** @var list<string> $prepared */
+        $prepared = WindowsCommandResolver::prepare($argv, $cwd);
 
-        $resolved = self::resolveWindowsBinary($argv[0], $cwd ?? (getcwd() ?: '.'));
-        if ($resolved !== null) {
-            $argv[0] = $resolved;
-        }
-
-        $extension = strtolower(pathinfo($argv[0], PATHINFO_EXTENSION));
-        if (! in_array($extension, ['bat', 'cmd'], true)) {
-            return $argv;
-        }
-
-        return array_merge(
-            [self::windowsCommandProcessor(), '/D', '/S', '/C'],
-            $argv,
-        );
-    }
-
-    private static function windowsCommandProcessor(): string
-    {
-        $comspec = getenv('COMSPEC');
-
-        return is_string($comspec) && $comspec !== '' ? $comspec : 'cmd.exe';
-    }
-
-    private static function resolveWindowsBinary(string $binary, string $cwd): ?string
-    {
-        $extensions = self::windowsExecutableExtensions();
-
-        foreach (self::candidateBinaryPaths($binary, $cwd, $extensions) as $candidate) {
-            if (is_file($candidate)) {
-                return $candidate;
-            }
-        }
-
-        return null;
-    }
-
-    private static function looksLikePath(string $binary): bool
-    {
-        return str_contains($binary, '\\')
-            || str_contains($binary, '/')
-            || preg_match('/^[A-Za-z]:/', $binary) === 1
-            || str_starts_with($binary, '.');
-    }
-
-    private static function normalizeCandidatePath(string $binary, string $cwd): string
-    {
-        if (preg_match('/^[A-Za-z]:/', $binary) === 1 || str_starts_with($binary, '\\\\')) {
-            return $binary;
-        }
-
-        return rtrim($cwd, '\\/').DIRECTORY_SEPARATOR.$binary;
-    }
-
-    /**
-     * @param  list<string>  $extensions
-     * @return list<string>
-     */
-    private static function candidateBinaryPaths(string $binary, string $cwd, array $extensions): array
-    {
-        if (self::looksLikePath($binary)) {
-            $base = self::normalizeCandidatePath($binary, $cwd);
-
-            return self::expandWindowsBinaryCandidates($base, $extensions);
-        }
-
-        $path = getenv('PATH');
-        if (! is_string($path) || $path === '') {
-            return [];
-        }
-
-        $candidates = [];
-
-        foreach (explode(PATH_SEPARATOR, $path) as $dir) {
-            if ($dir === '') {
-                continue;
-            }
-
-            $base = rtrim($dir, '\\/').DIRECTORY_SEPARATOR.$binary;
-            foreach (self::expandWindowsBinaryCandidates($base, $extensions) as $candidate) {
-                $candidates[] = $candidate;
-            }
-        }
-
-        return $candidates;
-    }
-
-    /**
-     * @param  list<string>  $extensions
-     * @return list<string>
-     */
-    private static function expandWindowsBinaryCandidates(string $base, array $extensions): array
-    {
-        if (pathinfo($base, PATHINFO_EXTENSION) !== '') {
-            return [$base];
-        }
-
-        $candidates = [];
-
-        foreach ($extensions as $extension) {
-            $candidates[] = $base.$extension;
-        }
-
-        $candidates[] = $base;
-
-        return $candidates;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private static function windowsExecutableExtensions(): array
-    {
-        $pathext = getenv('PATHEXT');
-
-        if (! is_string($pathext) || $pathext === '') {
-            return ['.com', '.exe', '.bat', '.cmd'];
-        }
-
-        $extensions = [];
-
-        foreach (explode(';', $pathext) as $extension) {
-            $extension = strtolower(trim($extension));
-            if ($extension === '') {
-                continue;
-            }
-
-            $extensions[] = str_starts_with($extension, '.') ? $extension : '.'.$extension;
-        }
-
-        return $extensions === [] ? ['.com', '.exe', '.bat', '.cmd'] : $extensions;
+        return $prepared;
     }
 
     private function emitCompletion(?EventLog $log, AdapterContext $context, AiResponse $response, int $durationMs): void

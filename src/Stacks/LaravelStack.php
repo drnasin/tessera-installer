@@ -1068,6 +1068,10 @@ HELPER);
 
         file_put_contents($envFile, $env);
 
+        if (PHP_OS_FAMILY !== 'Windows') {
+            @chmod($envFile, 0600);
+        }
+
         return $db;
     }
 

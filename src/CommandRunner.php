@@ -46,11 +46,11 @@ final class CommandRunner implements CommandExecutor
     /**
      * Run a subprocess and return its result.
      *
-     * @param array<int, string> $argv     [binary, arg1, arg2, ...] — NEVER a single string.
-     * @param string             $cwd      Working directory (must exist).
-     * @param EnvPolicy|null     $env      Env filter; null = inherit full env (unsafe, avoid).
-     * @param string|null        $stdin    Bytes to write to stdin; null = close stdin immediately.
-     * @param int|null           $timeout  Seconds; null = $defaultTimeout.
+     * @param  array<int, string>  $argv  [binary, arg1, arg2, ...] — NEVER a single string.
+     * @param  string  $cwd  Working directory (must exist).
+     * @param  EnvPolicy|null  $env  Env filter; null = inherit full env (unsafe, avoid).
+     * @param  string|null  $stdin  Bytes to write to stdin; null = close stdin immediately.
+     * @param  int|null  $timeout  Seconds; null = $defaultTimeout.
      */
     public function run(
         array $argv,
@@ -172,142 +172,6 @@ final class CommandRunner implements CommandExecutor
      */
     private static function prepareCommand(array $argv, string $cwd): array
     {
-        if (PHP_OS_FAMILY !== 'Windows') {
-            return $argv;
-        }
-
-        $resolved = self::resolveWindowsBinary($argv[0], $cwd);
-        if ($resolved !== null) {
-            $argv[0] = $resolved;
-        }
-
-        $extension = strtolower(pathinfo($argv[0], PATHINFO_EXTENSION));
-        if (! in_array($extension, ['bat', 'cmd'], true)) {
-            return $argv;
-        }
-
-        // Hand the batch wrapper to cmd.exe as separate argv tokens. PHP's
-        // CreateProcess quoting keeps whitespace and metacharacters inside
-        // each token, while cmd.exe provides the batch-file launcher.
-        return array_merge(
-            [self::windowsCommandProcessor(), '/D', '/S', '/C'],
-            $argv,
-        );
-    }
-
-    private static function windowsCommandProcessor(): string
-    {
-        $comspec = getenv('COMSPEC');
-
-        return is_string($comspec) && $comspec !== '' ? $comspec : 'cmd.exe';
-    }
-
-    private static function resolveWindowsBinary(string $binary, string $cwd): ?string
-    {
-        $extensions = self::windowsExecutableExtensions();
-
-        foreach (self::candidateBinaryPaths($binary, $cwd, $extensions) as $candidate) {
-            if (is_file($candidate)) {
-                return $candidate;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param  array<int, string>  $extensions
-     * @return array<int, string>
-     */
-    private static function candidateBinaryPaths(string $binary, string $cwd, array $extensions): array
-    {
-        if (self::looksLikePath($binary)) {
-            $base = self::normalizeCandidatePath($binary, $cwd);
-
-            return self::expandWindowsBinaryCandidates($base, $extensions);
-        }
-
-        $path = getenv('PATH');
-        if (! is_string($path) || $path === '') {
-            return [];
-        }
-
-        $candidates = [];
-
-        foreach (explode(PATH_SEPARATOR, $path) as $dir) {
-            if ($dir === '') {
-                continue;
-            }
-
-            $base = rtrim($dir, '\\/').DIRECTORY_SEPARATOR.$binary;
-            foreach (self::expandWindowsBinaryCandidates($base, $extensions) as $candidate) {
-                $candidates[] = $candidate;
-            }
-        }
-
-        return $candidates;
-    }
-
-    private static function looksLikePath(string $binary): bool
-    {
-        return str_contains($binary, '\\')
-            || str_contains($binary, '/')
-            || preg_match('/^[A-Za-z]:/', $binary) === 1
-            || str_starts_with($binary, '.');
-    }
-
-    private static function normalizeCandidatePath(string $binary, string $cwd): string
-    {
-        if (preg_match('/^[A-Za-z]:/', $binary) === 1 || str_starts_with($binary, '\\\\')) {
-            return $binary;
-        }
-
-        return rtrim($cwd, '\\/').DIRECTORY_SEPARATOR.$binary;
-    }
-
-    /**
-     * @param  array<int, string>  $extensions
-     * @return array<int, string>
-     */
-    private static function expandWindowsBinaryCandidates(string $base, array $extensions): array
-    {
-        if (pathinfo($base, PATHINFO_EXTENSION) !== '') {
-            return [$base];
-        }
-
-        $candidates = [];
-
-        foreach ($extensions as $extension) {
-            $candidates[] = $base.$extension;
-        }
-
-        $candidates[] = $base;
-
-        return $candidates;
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private static function windowsExecutableExtensions(): array
-    {
-        $pathext = getenv('PATHEXT');
-
-        if (! is_string($pathext) || $pathext === '') {
-            return ['.com', '.exe', '.bat', '.cmd'];
-        }
-
-        $extensions = [];
-
-        foreach (explode(';', $pathext) as $extension) {
-            $extension = strtolower(trim($extension));
-            if ($extension === '') {
-                continue;
-            }
-
-            $extensions[] = str_starts_with($extension, '.') ? $extension : '.'.$extension;
-        }
-
-        return $extensions === [] ? ['.com', '.exe', '.bat', '.cmd'] : $extensions;
+        return WindowsCommandResolver::prepare($argv, $cwd);
     }
 }

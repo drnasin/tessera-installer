@@ -16,6 +16,10 @@ namespace Tessera\Installer\Adapters;
  *     setting `TESSERA_SAFE_AI=1` in the environment, in which case Claude
  *     pauses for approval on each action and the installer fails loudly
  *     rather than silently hanging.
+ *   - TESSERA_SAFE_AI governs ONLY this adapter. Codex and Gemini have their
+ *     own approval models that Tessera does not configure; a runtime warning
+ *     is emitted when TESSERA_SAFE_AI=1 and those tools are the resolved
+ *     adapter. See README.md — "AI permission mode" section.
  *   - Per-tool environment isolation is enforced centrally by AbstractAdapter
  *     via EnvPolicy::forAiTool('claude'): only Anthropic credentials reach this
  *     child. OpenAI / Google credentials and unrelated secrets never do.

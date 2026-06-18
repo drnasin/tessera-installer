@@ -107,7 +107,7 @@ TESSERA_CODEX_PLAN=plus       # plus | free
 TESSERA_GEMINI_PLAN=free      # pro | free
 TESSERA_TOOL_PREFERENCE=gemini,claude,codex   # custom tool order
 TESSERA_TOOL_EXCLUDE=codex                    # never use this tool
-TESSERA_SAFE_AI=1             # opt out of --dangerously-skip-permissions for Claude
+TESSERA_SAFE_AI=1             # opt out of --dangerously-skip-permissions for Claude (see below)
 TESSERA_AI_TIMEOUT=900        # seconds per AI step (default 900)
 TESSERA_ISOLATE_AI_CONFIG=0   # opt out of interview behavioral-config isolation
 ```
@@ -118,6 +118,20 @@ interview is always in English and machine-independent. Auth is preserved. Set
 `TESSERA_ISOLATE_AI_CONFIG=0` only if a CLI flag ever breaks authentication on your setup.
 
 [Full security & permission model →](https://tessera-ai.net/docs/disclaimer)
+
+## AI permission mode
+
+`TESSERA_SAFE_AI=1` affects **only Claude**. Here is the exact per-tool breakdown:
+
+| Tool | Default behaviour | With `TESSERA_SAFE_AI=1` |
+|---|---|---|
+| **claude** | Launched with `--dangerously-skip-permissions` — no per-action approval prompts. | `--dangerously-skip-permissions` is removed. Claude pauses for approval on each action; the installer will fail loudly rather than silently hang. |
+| **codex** | Runs inside Codex's own sandboxed approval model. Tessera passes `--skip-git-repo-check` but no auto-approve flag. Whether Codex prompts depends on your installed version's defaults. | **No change.** `TESSERA_SAFE_AI` is ignored for Codex. A warning is printed to remind you of this. |
+| **gemini** | Gemini CLI's default approval flow is whatever ships on your machine. Tessera passes no permission flag. For API-key authenticated sessions this is typically non-interactive by default. | **No change.** `TESSERA_SAFE_AI` is ignored for Gemini. A warning is printed to remind you of this. |
+
+**Summary:** if you set `TESSERA_SAFE_AI=1` on a system where Codex or Gemini is the only available tool (or is preferred via `TESSERA_TOOL_PREFERENCE`), Claude's behaviour is unaffected (it is not running), and Tessera will emit a one-time warning that the flag has no effect on the resolved tool. The build will proceed using that tool's own defaults.
+
+If you need guaranteed non-interactive, unattended behaviour with Codex or Gemini, configure those tools' own approval settings outside of Tessera (e.g. Codex's `~/.codex/config.toml`, or ensure your Gemini API key is set so the CLI does not prompt for auth).
 
 ## After the build
 
