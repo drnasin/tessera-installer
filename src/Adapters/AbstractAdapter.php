@@ -9,6 +9,7 @@ use Tessera\Installer\Console;
 use Tessera\Installer\EnvPolicy;
 use Tessera\Installer\Events\EventLog;
 use Tessera\Installer\Events\EventType;
+use Tessera\Installer\SecretRedactor;
 use Tessera\Installer\WindowsCommandResolver;
 
 /**
@@ -395,7 +396,7 @@ abstract class AbstractAdapter implements AdapterInterface
             'exit_code' => $response->exitCode,
             'duration_ms' => $durationMs,
             'output_size' => strlen($response->output),
-            'error_excerpt' => $response->error !== '' ? mb_substr($response->error, 0, 500) : null,
+            'error_excerpt' => $response->error !== '' ? mb_substr(SecretRedactor::redact($response->error), 0, 500) : null,
             'step' => $context->stepName,
         ], $context->traceId);
     }
